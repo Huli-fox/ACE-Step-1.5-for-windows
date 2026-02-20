@@ -96,6 +96,31 @@ Quit button in the sidebar that gracefully shuts down all ACE-Step processes (Py
 
 ---
 
+## Persistent Settings
+
+**Branch:** `feature/Persistent-Settings`  
+**Status:** ✅ Merged
+
+Toggleable localStorage persistence for all generation settings. Disabled by default — once enabled in Settings, every parameter survives page refresh.
+
+### What's included
+
+| File | Description |
+|------|-------------|
+| `ace-step-ui/hooks/usePersistedState.ts` | `usePersistedState` hook — drop-in `useState` replacement with auto-persistence gated by `ace-persist-enabled` flag |
+| `ace-step-ui/components/SettingsModal.tsx` | "Persistent Settings" toggle section with enable/disable switch |
+| `ace-step-ui/components/CreatePanel.tsx` | ~35 useState calls converted to usePersistedState |
+
+### How it works
+
+1. Open **Settings** → toggle **"Remember my settings"** ON
+2. All generation parameters (style, lyrics, BPM, model, LoRA path, inference settings, etc.) are now auto-saved to localStorage
+3. Page refresh → all settings restored
+4. Toggle OFF → all saved settings cleared, page reloads with defaults
+5. Future features: use `usePersistedState('key', default)` instead of `useState(default)` — one-line change
+
+---
+
 <!-- 
 ## [Next Feature Name]
 
