@@ -1,0 +1,58 @@
+---
+description: how to develop and ship a new feature branch
+---
+
+# Feature Development Workflow
+
+// turbo-all
+
+## Setup
+
+The repo is at `D:\Ace-Step-Latest\ACE-Step-1.5-for-windows`.
+
+- **origin** → `sdbds/ACE-Step-1.5-for-windows` (upstream qinglong fork)
+- **myfork** → `scragnog/ACE-Step-1.5-for-windows` (our fork)
+- **Default branch:** `qinglong`
+
+## Steps
+
+1. Make sure you're on the latest `qinglong` branch:
+```
+cd D:\Ace-Step-Latest\ACE-Step-1.5-for-windows
+git checkout qinglong
+git pull myfork qinglong
+```
+
+2. Create a new feature branch:
+```
+git checkout -b feature/<feature-name>
+```
+
+3. Develop the feature — make commits as you go.
+
+4. Push the feature branch to the fork:
+```
+git push --no-recurse-submodules myfork feature/<feature-name>
+```
+   - If the `ace-step-ui` submodule was modified, push it separately first:
+```
+cd ace-step-ui
+git push myfork qinglong
+cd ..
+```
+
+5. Merge the feature into `qinglong`:
+```
+git checkout qinglong
+git merge feature/<feature-name> --no-edit
+git push myfork qinglong
+```
+
+6. Update `FEATURES.md` in the repo root with the new feature details. Use the commented template at the bottom of the file.
+
+7. Commit and push the `FEATURES.md` update:
+```
+git add FEATURES.md
+git commit -m "docs: add <feature-name> to FEATURES.md"
+git push myfork qinglong
+```

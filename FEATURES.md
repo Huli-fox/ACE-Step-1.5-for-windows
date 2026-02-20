@@ -67,6 +67,35 @@ Dynamic model discovery and hot-swap switching. The model dropdown auto-populate
 
 ---
 
+## Simple Shutdown
+
+**Branch:** `feature/Simple-Shutdown`  
+**Status:** ✅ Merged
+
+Quit button in the sidebar that gracefully shuts down all ACE-Step processes (Python API, Vite frontend, Express backend, and their hosting terminal windows).
+
+### What's included
+
+| File | Description |
+|------|-------------|
+| `ace-step-ui/server/src/index.ts` | `POST /api/shutdown` — snapshots the process table via `Get-CimInstance`, walks the process tree to find ancestor shells, kills everything |
+| `ace-step-ui/components/Sidebar.tsx` | Power icon quit button (red styling, appears at sidebar bottom) |
+| `ace-step-ui/App.tsx` | ConfirmDialog wiring + "ACE-Step has shut down" overlay |
+
+### How it works
+
+1. Click the red **Quit** button at the bottom of the sidebar
+2. A confirmation dialog appears — "Are you sure you wish to shut down ACE-Step?"
+3. On confirm, `POST /api/shutdown` is called:
+   - Snapshots the entire Windows process table in one `Get-CimInstance Win32_Process` call (~200ms)
+   - Finds PIDs on ports 8001 (Python API) and 3000 (Vite) via `netstat`
+   - Walks UP the process tree to find ancestor CMD/PowerShell/conhost windows
+   - Kills all collected PIDs with `taskkill /F /T`
+   - Express process exits last
+4. Browser shows a "You may now close this tab" overlay
+
+---
+
 <!-- 
 ## [Next Feature Name]
 
