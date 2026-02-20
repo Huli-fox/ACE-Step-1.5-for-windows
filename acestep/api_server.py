@@ -3510,7 +3510,11 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=500, detail="Model not initialized")
 
         try:
-            result = handler.set_use_lora(request.use_lora)
+            # If advanced adapter slots are loaded, use the advanced toggle
+            if hasattr(handler, '_adapter_slots') and handler._adapter_slots:
+                result = handler.set_use_lora_advanced(request.use_lora)
+            else:
+                result = handler.set_use_lora(request.use_lora)
 
             if result.startswith("✅"):
                 return _wrap_response({"message": result, "use_lora": request.use_lora})
@@ -3528,6 +3532,15 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=500, detail="Model not initialized")
 
         try:
+            # Advanced mode: slot-based scale
+            if request.slot is not None:
+                result = handler.set_lora_slot_scale(request.slot, request.scale)
+                if result.startswith("✅"):
+                    return _wrap_response({"message": result, "scale": request.scale, "slot": request.slot})
+                else:
+                    return _wrap_response(None, code=400, error=result)
+
+            # Basic mode: original PEFT-based scaling
             adapter_name = request.adapter_name.strip() if isinstance(request.adapter_name, str) else None
             if adapter_name:
                 result = handler.set_lora_scale(adapter_name, request.scale)
