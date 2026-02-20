@@ -92,16 +92,29 @@ use sudo pwsh if you in Linux without root user.
 
 ## Usage
 
-Run
+### Option A: One-Click Launcher (Recommended)
+
+Double-click **`LAUNCH.bat`** — this will:
+
+1. Open a loading screen in your browser immediately
+2. Install UI dependencies if needed
+3. Start the Python API server and UI servers
+4. Auto-redirect to the app once all services are ready
+
+The loading screen shows real-time status for each service (Python API, Express backend, Vite frontend) and redirects automatically when everything is loaded.
+
+> **Alternative:** `START.bat` does the same thing without the loading screen — it opens three separate command windows and launches the browser directly after a short delay.
+
+### Option B: Manual Launch (PowerShell Scripts)
+
+If you prefer to start services independently:
 
 ```powershell
+# Terminal 1 — Start the Python API backend
 3、run_server.ps1
-```
 
-for API_backend
-
-```powershell
+# Terminal 2 — Start the UI (Express + Vite frontend)
 4、run_npmgui.ps1
 ```
 
-for npm_frontend
+Then open http://localhost:3456 in your browser.
