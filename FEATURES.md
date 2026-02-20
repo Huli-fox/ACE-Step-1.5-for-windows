@@ -121,6 +121,38 @@ Toggleable localStorage persistence for all generation settings. Disabled by def
 
 ---
 
+## Track List Updates
+
+**Branch:** `feature/Track-List-Updates`  
+**Status:** ✅ Merged
+
+A collection of track list UX improvements, bug fixes, and a new bulk-delete feature.
+
+### What's included
+
+| File | Description |
+|------|-------------|
+| `ace-step-ui/components/WaveformVisualizer.tsx` | Replaced upstream fixed-width bar rendering with dynamic spacing so the waveform fills the full progress bar width. Includes shared `AudioContext`, LRU cache (30 entries), and `AbortController` for proper cleanup. |
+| `ace-step-ui/server/src/routes/generate.ts` | Fixed generation progress display — parses tqdm-style `progress_text` from the Python API. Added per-job queue detection so queued jobs don't leak the running job's progress. |
+| `ace-step-ui/components/CreatePanel.tsx` | "Queue Next" button now uses i18n key instead of hardcoded English text. |
+| `ace-step-ui/i18n/translations.ts` | Added `queueNext`, `deleteAllTracks`, `deleteAllTracksConfirm`, `allTracksDeleted`, `deleteAllFailed` keys for all 4 languages (en, zh, ja, ko). |
+| `ace-step-ui/components/SongList.tsx` | Removed `createdAt` DESC sort from `listItems` so songs maintain their order from state. Added `onDeleteAll` prop with a trash icon button in the header bar. |
+| `ace-step-ui/App.tsx` | Removed the `refreshSongsList` sort that caused completed songs to jump to the top. Completion now does in-place merge instead of full list reload. Added `handleDeleteAll` with confirmation dialog. |
+| `ace-step-ui/server/src/routes/songs.ts` | Added `DELETE /api/songs/all` endpoint — deletes all user songs and associated audio/cover files from storage. |
+| `ace-step-ui/services/api.ts` | Added `deleteAllSongs()` API client method. |
+| `LAUNCH.bat`, `START.bat`, `ace-step-ui/start.bat`, `ace-step-ui/start-all.bat` | Added `/min` flag to all `start` commands so spawned terminal windows launch minimized. |
+
+### Changes in detail
+
+- **Waveform alignment** — Bars now fill the entire progress bar width using dynamic step calculation instead of fixed `barWidth=2, gap=1`.
+- **Generation progress** — The Express backend now parses tqdm output (`14%|##5| 27/200 [00:06<00:42, 4.10steps/s]`) to extract percentage, ETA, and step count.
+- **Queue progress bleed fix** — The Python API maps both `queued` and `running` to status code `0` and shares a global `log_buffer.last_message`. The Express status handler now checks the per-job `stage` field in the result data to detect queued jobs and returns `status: 'queued'` with `progress: 0` instead of leaking the running job's tqdm output.
+- **Track reordering fix** — Two sorts were causing completed songs to jump to the top: one in `refreshSongsList` (App.tsx) and one in `listItems` (SongList.tsx). Both removed. Completion now does an in-place merge that preserves existing order.
+- **Delete All Tracks** — Trash icon button in the track list header (next to Select/Filter). Shows a confirmation dialog with the count of tracks. Calls `DELETE /api/songs/all` which deletes all audio/cover files from storage and removes all DB rows.
+- **Minimized windows** — All spawned terminal windows (Python API, Express, Vite) now launch minimized via `/min` flag.
+
+---
+
 <!-- 
 ## [Next Feature Name]
 

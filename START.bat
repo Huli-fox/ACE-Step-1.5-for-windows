@@ -48,7 +48,7 @@ echo.
 
 REM ---- Step 3: Start Python API server (new window) ----
 echo [3/4] Starting Python API server on port 8001...
-start "ACE-Step Python API" cmd /k "cd /d "%~dp0" && if exist .venv\Scripts\activate.bat (call .venv\Scripts\activate.bat) && set "PYTHONPATH=%~dp0" && set "HF_HOME=huggingface" && set "XFORMERS_FORCE_DISABLE_TRITON=1" && set "UV_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cu130" && set "UV_CACHE_DIR=%LOCALAPPDATA%\uv\cache" && set "UV_NO_BUILD_ISOLATION=1" && set "UV_LINK_MODE=symlink" && set "UV_INDEX_STRATEGY=unsafe-best-match" && uv run acestep-api --port 8001"
+start /min "ACE-Step Python API" cmd /k "cd /d "%~dp0" && if exist .venv\Scripts\activate.bat (call .venv\Scripts\activate.bat) && set "PYTHONPATH=%~dp0" && set "HF_HOME=huggingface" && set "XFORMERS_FORCE_DISABLE_TRITON=1" && set "UV_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cu130" && set "UV_CACHE_DIR=%LOCALAPPDATA%\uv\cache" && set "UV_NO_BUILD_ISOLATION=1" && set "UV_LINK_MODE=symlink" && set "UV_INDEX_STRATEGY=unsafe-best-match" && uv run acestep-api --port 8001"
 echo   Waiting for API to initialize...
 timeout /t 10 /nobreak >nul
 echo   Done.
@@ -69,11 +69,11 @@ set "ACESTEP_PATH=%~dp0"
 set "PYTHON_PATH=%~dp0.venv\Scripts\python.exe"
 
 REM Start Express backend
-start "ACE-Step UI Backend" cmd /k "cd /d "%~dp0ace-step-ui\server" && npm run dev"
+start /min "ACE-Step UI Backend" cmd /k "cd /d "%~dp0ace-step-ui\server" && npm run dev"
 timeout /t 3 /nobreak >nul
 
 REM Start Next.js frontend
-start "ACE-Step UI Frontend" cmd /k "cd /d "%~dp0ace-step-ui" && npm run dev"
+start /min "ACE-Step UI Frontend" cmd /k "cd /d "%~dp0ace-step-ui" && npm run dev"
 timeout /t 3 /nobreak >nul
 
 echo.

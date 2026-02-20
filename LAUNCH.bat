@@ -51,7 +51,7 @@ echo.
 
 REM ---- Step 3: Start Python API server via existing PS1 script ----
 echo [3/4] Starting Python API server...
-start "ACE-Step Python API" powershell -ExecutionPolicy Bypass -Command "Set-Location '%~dp0'; & '.\3、run_server.ps1'"
+start /min "ACE-Step Python API" powershell -ExecutionPolicy Bypass -Command "Set-Location '%~dp0'; & '.\3、run_server.ps1'"
 echo   Started.
 echo.
 
