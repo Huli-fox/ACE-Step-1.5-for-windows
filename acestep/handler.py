@@ -5,6 +5,24 @@ Encapsulates all data processing and business logic as a bridge between model an
 import os
 import sys
 
+# ---- File-based generation log for diagnostics ----
+# All loguru output is also written to logs/generation.log for offline comparison
+_gen_log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "logs")
+os.makedirs(_gen_log_dir, exist_ok=True)
+from loguru import logger as _early_logger
+_early_logger.add(
+    os.path.join(_gen_log_dir, "generation.log"),
+    rotation="10 MB",
+    retention=3,
+    format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level:<7} | {message}",
+    level="DEBUG",
+    filter=lambda record: any(kw in record["message"] for kw in (
+        "generate_music", "generate_diffusion", "adapter", "LoRA", "lora",
+        "merged", "delta", "hook", "slot", "decoder", "LoKr", "lokr",
+        "base_decoder", "apply_merged", "extract_adapter",
+    )),
+)
+
 # Disable tokenizers parallelism to avoid fork warning
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
