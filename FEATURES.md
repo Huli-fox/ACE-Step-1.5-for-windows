@@ -153,6 +153,42 @@ A collection of track list UX improvements, bug fixes, and a new bulk-delete fea
 
 ---
 
+## Advanced Multi-Adapter System
+
+**Branch:** `feature/advanced-adapters`  
+**Status:** 🚧 In Progress
+
+Slot-based multi-adapter loading (up to 4 simultaneous LoRA/LoKr adapters) with per-slot scaling and per-module-group scaling (Self-Attn, Cross-Attn, MLP). Uses weight-space merging approach. Existing basic single-adapter UI is preserved — the advanced system is behind an opt-in "Advanced" checkbox.
+
+### What's included
+
+| File | Description |
+|------|-------------|
+| `acestep/core/generation/handler/lora/advanced_adapter_mixin.py` | **[NEW]** `AdvancedAdapterMixin` — delta extraction, weight-space merging (`base + Σ(scale × group_scale × delta)`), slot management |
+| `acestep/core/generation/handler/lora_manager.py` | Import + export `AdvancedAdapterMixin` |
+| `acestep/handler.py` | Added `AdvancedAdapterMixin` to MRO, init state (`_adapter_slots`, `_next_slot_id`, `_merged_dirty`, `lora_group_scales`) |
+| `acestep/api_server.py` | 3 new endpoints, updated `load`/`unload` for slot param, new request models |
+| `ace-step-ui/server/src/routes/lora.ts` | 3 new routes: `GET /list-files` (folder scanner), `POST /group-scales`, `POST /slot-group-scales` |
+| `ace-step-ui/services/api.ts` | `listLoraFiles()`, `setGroupScales()`, `setSlotGroupScales()`, updated `loadLora`/`unloadLora` for slot support |
+| `ace-step-ui/components/CreatePanel.tsx` | Advanced toggle, folder browser, slot cards with per-slot scale + expandable per-group sliders |
+
+### How it works
+
+1. Open the **LoRA** panel and check **Advanced (Multi-Adapter)**
+2. Enter an adapter folder path → click **Scan** → available `.safetensors` files appear
+3. Click **Load** on any adapter → it's loaded into a slot, delta extracted via weight-space merging
+4. Each slot card shows: adapter name, type badge (LoRA/LoKr), overall scale slider (0–2)
+5. Expand **Groups** on a slot → independent Self-Attn, Cross-Attn, MLP sliders (0–2)
+6. Load additional adapters (up to 4) — all merge simultaneously: `decoder = base + Σ(slot_scale × group_scale × delta)`
+7. Per-adapter group scale settings are persisted in localStorage by adapter filename
+8. Uncheck "Advanced" → original basic single-adapter UI appears unchanged
+
+### Architecture note
+
+Basic mode uses PEFT runtime hooks (existing). Advanced mode uses **weight-space merging**: backs up base decoder to CPU (~1.5GB), extracts each adapter as a delta, applies `base + Σ(scaled deltas)` at inference. Re-merge takes ~1s on scale change.
+
+---
+
 <!-- 
 ## [Next Feature Name]
 
@@ -167,3 +203,4 @@ Brief description.
 ### How it works
 - ...
 -->
+

@@ -235,7 +235,7 @@
 
             <li id="s-frontend">
                 <span class="icon pending" id="i-frontend"></span>
-                <span>Vite Frontend <small style="color:#555">(port 3000)</small></span>
+                <span>Vite Frontend <small style="color:#555" id="frontend-port">(port ...)</small></span>
             </li>
         </ul>
 
@@ -246,9 +246,15 @@
         </div>
     </div>
 
+    <!-- Port config written by LAUNCH.bat (var VITE_PORT = '3000';) -->
+    <script src="loading-config.js" onerror="window.VITE_PORT='3000'"></script>
     <script>
         const start = Date.now();
         const state = { apiUp: false, apiReady: false, backend: false, frontend: false };
+
+        // Port comes from loading-config.js (written by LAUNCH.bat) or defaults to 3000
+        if (typeof VITE_PORT === 'undefined') var VITE_PORT = '3000';
+        document.getElementById('frontend-port').textContent = `(port ${VITE_PORT})`;
 
         function elapsed() {
             const s = Math.floor((Date.now() - start) / 1000);
@@ -334,7 +340,7 @@
             // ---- Vite frontend ----
             if (!state.frontend) {
                 setIcon('i-frontend', 'running'); setRow('s-frontend', 'running');
-                state.frontend = await probeNoCors('http://localhost:3000');
+                state.frontend = await probeNoCors(`http://localhost:${VITE_PORT}`);
             }
             if (state.frontend) { setIcon('i-frontend', 'done'); setRow('s-frontend', 'done'); }
 
@@ -344,7 +350,7 @@
                 document.getElementById('spinnerWrap').style.display = 'none';
                 document.getElementById('readyBanner').classList.add('show');
                 document.getElementById('elapsed').textContent = `All ready in ${elapsed()} — redirecting…`;
-                setTimeout(() => { window.location.href = 'http://localhost:3000'; }, 1500);
+                setTimeout(() => { window.location.href = `http://localhost:${VITE_PORT}`; }, 1500);
             } else {
                 setTimeout(poll, 2500);
             }

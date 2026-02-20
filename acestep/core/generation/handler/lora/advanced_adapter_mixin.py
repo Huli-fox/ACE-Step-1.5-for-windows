@@ -104,7 +104,6 @@ def _extract_adapter_delta(self, lora_path: str) -> dict:
         from acestep.training.lokr_utils import (
             check_lycoris_available,
             inject_lokr_into_dit,
-            load_lokr_weights,
         )
 
         if not check_lycoris_available():
@@ -130,7 +129,8 @@ def _extract_adapter_delta(self, lora_path: str) -> dict:
                 setattr(lokr_cfg, k, v)
 
         self.model, lycoris_net, _ = inject_lokr_into_dit(self.model, lokr_cfg)
-        load_lokr_weights(lycoris_net, lokr_weights_path)
+        # Load weights directly (bypasses safe_path which restricts to cwd)
+        lycoris_net.load_weights(lokr_weights_path)
         self.model.decoder = self.model.decoder.to(self.device).to(self.dtype)
         self.model.decoder.eval()
 

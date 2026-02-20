@@ -5,6 +5,12 @@ REM  Starts: Python API + Express Backend + Next.js Frontend
 REM ============================================================
 setlocal
 
+REM Read frontend port from .env
+set "VITE_PORT=3000"
+if exist "ace-step-ui\.env" (
+    for /f "tokens=2 delims==" %%a in ('findstr /b "VITE_PORT" "ace-step-ui\.env"') do set "VITE_PORT=%%a"
+)
+
 cd /d "%~dp0"
 
 echo.
@@ -83,10 +89,10 @@ echo =============================================
 echo.
 echo   Python API:  http://localhost:8001
 echo   Backend:     http://localhost:3001
-echo   Frontend:    http://localhost:3000
+echo   Frontend:    http://localhost:%VITE_PORT%
 echo.
 if defined LOCAL_IP (
-    echo   LAN Access:  http://%LOCAL_IP%:3000
+    echo   LAN Access:  http://%LOCAL_IP%:%VITE_PORT%
     echo.
 )
 echo   Three windows opened:
@@ -101,6 +107,6 @@ echo.
 REM Open browser
 echo Opening browser...
 timeout /t 2 /nobreak >nul
-start http://localhost:3000
+start http://localhost:%VITE_PORT%
 
 pause

@@ -13,6 +13,12 @@ REM Tell start.bat not to open a browser — our loading page handles that
 set "ACESTEP_NO_BROWSER=1"
 
 echo.
+REM Read frontend port from .env
+set "VITE_PORT=3000"
+if exist "ace-step-ui\.env" (
+    for /f "tokens=2 delims==" %%a in ('findstr /b "VITE_PORT" "ace-step-ui\.env"') do set "VITE_PORT=%%a"
+)
+
 echo =============================================
 echo   ACE-Step One-Click Launcher
 echo =============================================
@@ -20,6 +26,7 @@ echo.
 
 REM ---- Step 1: Open loading page in browser immediately ----
 echo [1/4] Opening loading screen...
+echo var VITE_PORT = '%VITE_PORT%'; > "%~dp0loading-config.js"
 start "" "%~dp0loading.html"
 echo   Done.
 echo.
@@ -72,7 +79,7 @@ echo   all services are ready.
 echo.
 echo   Python API:  http://localhost:8001
 echo   Backend:     http://localhost:3001
-echo   Frontend:    http://localhost:3000
+echo   Frontend:    http://localhost:%VITE_PORT%
 echo.
 echo   Two minimized windows are running:
 echo     - Python API (run_server.ps1)
