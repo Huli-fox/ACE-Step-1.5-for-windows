@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ACE-Step — Starting Up</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            background: #0a0a0f;
+            color: #e0e0e8;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Animated background gradient */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background:
+                radial-gradient(ellipse 80% 60% at 50% 0%, rgba(99, 60, 255, .15), transparent),
+                radial-gradient(ellipse 60% 50% at 80% 100%, rgba(0, 200, 255, .08), transparent),
+                radial-gradient(ellipse 50% 40% at 10% 60%, rgba(255, 60, 170, .06), transparent);
+            animation: shimmer 8s ease-in-out infinite alternate;
+            z-index: 0;
+        }
+
+        @keyframes shimmer {
+            0% {
+                opacity: .6;
+                transform: scale(1);
+            }
+
+            100% {
+                opacity: 1;
+                transform: scale(1.05);
+            }
+        }
+
+        .container {
+            position: relative;
+            z-index: 1;
+            text-align: center;
+            max-width: 520px;
+            padding: 2rem;
+        }
+
+        /* Logo / title */
+        h1 {
+            font-size: 2.4rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #a78bfa, #60a5fa, #34d399);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: .35rem;
+            letter-spacing: -.02em;
+        }
+
+        .subtitle {
+            font-size: .85rem;
+            color: #888;
+            margin-bottom: 2.5rem;
+            font-weight: 400;
+        }
+
+        /* Spinner */
+        .spinner-wrap {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 2rem;
+        }
+
+        .spinner {
+            width: 56px;
+            height: 56px;
+            border: 3px solid rgba(167, 139, 250, .15);
+            border-top-color: #a78bfa;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* Status checklist */
+        .checks {
+            list-style: none;
+            text-align: left;
+            margin-bottom: 2rem;
+        }
+
+        .checks li {
+            display: flex;
+            align-items: center;
+            gap: .65rem;
+            padding: .55rem 0;
+            font-size: .9rem;
+            color: #777;
+            border-bottom: 1px solid rgba(255, 255, 255, .04);
+            transition: color .3s;
+        }
+
+        .checks li.ok {
+            color: #6ee7b7;
+        }
+
+        .checks li.active {
+            color: #c4b5fd;
+        }
+
+        .icon {
+            width: 22px;
+            height: 22px;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            font-size: .75rem;
+            transition: all .3s;
+        }
+
+        .icon.pending {
+            border: 2px solid #444;
+        }
+
+        .icon.running {
+            border: 2px solid #a78bfa;
+            animation: pulse-ring 1.4s ease-in-out infinite;
+        }
+
+        .icon.done {
+            background: #10b981;
+            border: none;
+            color: #fff;
+            font-weight: 700;
+        }
+
+        @keyframes pulse-ring {
+
+            0%,
+            100% {
+                box-shadow: 0 0 0 0 rgba(167, 139, 250, .4);
+            }
+
+            50% {
+                box-shadow: 0 0 0 6px rgba(167, 139, 250, 0);
+            }
+        }
+
+        /* Detail text under each check */
+        .detail {
+            font-size: .72rem;
+            color: #555;
+            margin-left: 2.15rem;
+            margin-top: -.25rem;
+            padding-bottom: .3rem;
+        }
+
+        /* Elapsed time */
+        .elapsed {
+            font-size: .78rem;
+            color: #555;
+            margin-top: 1rem;
+        }
+
+        /* Ready state */
+        .ready-banner {
+            display: none;
+            background: linear-gradient(135deg, rgba(16, 185, 129, .12), rgba(99, 60, 255, .08));
+            border: 1px solid rgba(16, 185, 129, .25);
+            border-radius: 12px;
+            padding: 1.2rem;
+            margin-top: 1.5rem;
+            font-size: .95rem;
+            color: #6ee7b7;
+        }
+
+        .ready-banner.show {
+            display: block;
+            animation: fadeIn .5s ease;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(8px);
+            }
+
+            to {
+                opacity: 1;
+                transform: none;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>ACE-Step</h1>
+        <p class="subtitle">AI Music Generation Studio</p>
+
+        <div class="spinner-wrap" id="spinnerWrap">
+            <div class="spinner"></div>
+        </div>
+
+        <ul class="checks">
+            <li id="s-api">
+                <span class="icon pending" id="i-api"></span>
+                <span>Python API Server <small style="color:#555">(port 8001)</small></span>
+            </li>
+            <li class="detail" id="d-api">Waiting for server to start…</li>
+
+            <li id="s-backend">
+                <span class="icon pending" id="i-backend"></span>
+                <span>Express Backend <small style="color:#555">(port 3001)</small></span>
+            </li>
+
+            <li id="s-frontend">
+                <span class="icon pending" id="i-frontend"></span>
+                <span>Vite Frontend <small style="color:#555">(port 3456)</small></span>
+            </li>
+        </ul>
+
+        <div class="elapsed" id="elapsed">Starting services…</div>
+
+        <div class="ready-banner" id="readyBanner">
+            ✨ All systems ready — redirecting…
+        </div>
+    </div>
+
+    <script>
+        const start = Date.now();
+        const state = { apiUp: false, apiReady: false, backend: false, frontend: false };
+
+        function elapsed() {
+            const s = Math.floor((Date.now() - start) / 1000);
+            const m = Math.floor(s / 60);
+            return m > 0 ? `${m}m ${s % 60}s` : `${s}s`;
+        }
+
+        function setIcon(id, status) {
+            const el = document.getElementById(id);
+            el.className = 'icon ' + status;
+            el.textContent = status === 'done' ? '✓' : '';
+        }
+
+        function setRow(id, status) {
+            const el = document.getElementById(id);
+            el.className = status === 'done' ? 'ok' : (status === 'running' ? 'active' : '');
+        }
+
+        function setDetail(id, text) {
+            const el = document.getElementById(id);
+            if (el) el.textContent = text;
+        }
+
+        // Probe with no-cors (just checks if server responds at all)
+        async function probeNoCors(url, timeout = 2000) {
+            try {
+                const c = new AbortController();
+                const t = setTimeout(() => c.abort(), timeout);
+                await fetch(url, { signal: c.signal, mode: 'no-cors' });
+                clearTimeout(t);
+                return true;
+            } catch { return false; }
+        }
+
+        // Probe the Python API's /v1/models/status to check if models are loaded
+        // This endpoint returns { data: { active_model: "model-name" } } when ready
+        // and { data: { active_model: null } } when models are still loading
+        async function probeApiReady(timeout = 3000) {
+            try {
+                const c = new AbortController();
+                const t = setTimeout(() => c.abort(), timeout);
+                const r = await fetch('http://localhost:8001/v1/models/status', {
+                    signal: c.signal,
+                    headers: { 'Accept': 'application/json' },
+                });
+                clearTimeout(t);
+                if (!r.ok) return { up: true, ready: false, model: null };
+                const json = await r.json();
+                const data = json.data || json;
+                const activeModel = data.active_model || null;
+                return { up: true, ready: !!activeModel, model: activeModel };
+            } catch {
+                return { up: false, ready: false, model: null };
+            }
+        }
+
+        async function poll() {
+            // ---- Python API: two-phase check (HTTP up → models loaded) ----
+            if (!state.apiReady) {
+                setIcon('i-api', 'running'); setRow('s-api', 'running');
+                const result = await probeApiReady();
+
+                if (result.up && !result.ready) {
+                    state.apiUp = true;
+                    setDetail('d-api', 'Server is up — loading models into VRAM…');
+                } else if (result.ready) {
+                    state.apiUp = true;
+                    state.apiReady = true;
+                    setDetail('d-api', `Model loaded: ${result.model}`);
+                } else {
+                    setDetail('d-api', 'Waiting for server to start…');
+                }
+            }
+            if (state.apiReady) { setIcon('i-api', 'done'); setRow('s-api', 'done'); }
+
+            // ---- Express backend ----
+            if (!state.backend) {
+                setIcon('i-backend', 'running'); setRow('s-backend', 'running');
+                state.backend = await probeNoCors('http://localhost:3001/health');
+            }
+            if (state.backend) { setIcon('i-backend', 'done'); setRow('s-backend', 'done'); }
+
+            // ---- Vite frontend ----
+            if (!state.frontend) {
+                setIcon('i-frontend', 'running'); setRow('s-frontend', 'running');
+                state.frontend = await probeNoCors('http://localhost:3456');
+            }
+            if (state.frontend) { setIcon('i-frontend', 'done'); setRow('s-frontend', 'done'); }
+
+            document.getElementById('elapsed').textContent = `Elapsed: ${elapsed()}`;
+
+            if (state.apiReady && state.backend && state.frontend) {
+                document.getElementById('spinnerWrap').style.display = 'none';
+                document.getElementById('readyBanner').classList.add('show');
+                document.getElementById('elapsed').textContent = `All ready in ${elapsed()} — redirecting…`;
+                setTimeout(() => { window.location.href = 'http://localhost:3456'; }, 1500);
+            } else {
+                setTimeout(poll, 2500);
+            }
+        }
+
+        poll();
+    </script>
+</body>
+
+</html>
