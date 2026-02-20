@@ -41,7 +41,9 @@ git push myfork qinglong
 cd ..
 ```
 
-5. Merge the feature into `qinglong`:
+5. **WAIT for user to test locally before merging.** Do NOT merge until they confirm it works.
+
+6. Merge the feature into `qinglong`:
 ```
 git checkout qinglong
 git merge feature/<feature-name> --no-edit
