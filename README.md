@@ -1,83 +1,90 @@
-# Ace-Step-1.5-for-windows
+# ACE-Step 1.5 for Windows — Enhanced Fork
 
-original backend codebase from ACE-Step-1.5
-
-https://github.com/ace-step/ACE-Step-1.5
-
-original frontend codebase from ace-step-ui
-
-https://github.com/fspecii/ace-step-ui
+An enhanced fork of [sdbds/ACE-Step-1.5-for-windows](https://github.com/sdbds/ACE-Step-1.5-for-windows) with a rebuilt UI experience, multi-adapter support, and quality-of-life improvements for music generation with [ACE-Step 1.5](https://github.com/ace-step/ACE-Step-1.5).
 
 <img width="2062" height="952" alt="image" src="https://github.com/user-attachments/assets/6e682194-99f2-4267-b412-1b5198720b87" />
 
-## Feather
+---
 
-### 1. Complete style search and random selection, with a total of 936 styles, synchronized from Suno's explorer.
+## ✨ New Features
 
-<img width="412" height="752" alt="image" src="https://github.com/user-attachments/assets/a17ad92c-9cdd-4927-9e0e-5e9848747438" />
+> Full details and implementation notes in [FEATURES.md](FEATURES.md).
 
-### 2.Generate a complete record of song parameters, which can be reused at any time.
+### 🎛️ Advanced Multi-Adapter System
+Load up to **4 LoRA/LoKr adapters simultaneously** with independent per-slot scale sliders and per-module-group scaling (Self-Attn, Cross-Attn, MLP). Uses weight-space merging for zero-hook inference. Per-adapter settings persist across sessions. Includes a built-in **file browser** for scanning and loading `.safetensors` files from a configurable folder.
 
-<img width="399" height="517" alt="image" src="https://github.com/user-attachments/assets/42804479-a252-46cd-9032-963f71123536" />
+### 🚀 One-Click Launcher
+Double-click `LAUNCH.bat` → animated loading screen monitors all three services (Python API, Express backend, Vite frontend) and auto-redirects when ready. No manual terminal management required.
 
-### 3.All pages are localized into four languages ​​(English, Chinese, Japanese, and Korean).
+### 🔄 Hot-Swap Model Selector
+Live model switching without restarting the server. The dropdown auto-discovers all installed checkpoints and shows a mismatch banner if the selected model differs from the loaded one.
 
-<img width="824" height="718" alt="image" src="https://github.com/user-attachments/assets/2b3a81fb-88fe-42a6-81d0-998d52da50c3" />
+### 💾 Persistent Settings
+All generation settings (style, lyrics, BPM, model, adapter paths, scales, inference params) survive page refresh via localStorage. Toggle on/off in Settings.
 
-### 4.LoRA training support and memory offloading optimization.
-There were still some issues with the original backend repository's GPU memory unloading, so we made significant reconstructions and optimizations. Now we train with the lowest GPU memory and the fastest speed.
+### 🎵 Track List Improvements
+- Full-width waveform visualizer with shared AudioContext and LRU cache
+- Real-time generation progress (parsed from tqdm output)
+- Queue system with per-job progress isolation
+- Bulk delete all tracks
+- Tracks maintain chronological order (no jumping on completion)
 
-<img width="1934" height="832" alt="image" src="https://github.com/user-attachments/assets/88b61873-a6dd-454c-ad97-4ceee5f9a22f" />
+### ⏻ Simple Shutdown
+Quit button in the sidebar gracefully shuts down all processes (Python API, Vite, Express, and their hosting terminal windows) with a single click.
 
-### 5.LoKR training support and reduce training time and improve sound quality
+---
 
-<img width="1913" height="813" alt="image" src="https://github.com/user-attachments/assets/68fe0074-c0cb-427a-92e3-ee7b7fe7acd5" />
+## Upstream Features
 
-### 6.We've also added the ability to load Lora/LoKR. Note that Lora reads folders, while LoKR reads safetensors files.
+All features from the upstream [sdbds/ACE-Step-1.5-for-windows](https://github.com/sdbds/ACE-Step-1.5-for-windows) are preserved:
 
-<img width="410" height="408" alt="image" src="https://github.com/user-attachments/assets/9c2bca58-4133-4884-aecf-fabe42bcf5c9" />
+- Complete style search with 936 styles synchronized from Suno's explorer
+- Song parameter history — reuse any previous generation's settings
+- Four-language localization (English, Chinese, Japanese, Korean)
+- LoRA and LoKr training support with memory offloading optimization
+- Basic single-adapter LoRA/LoKr loading
 
+---
 
 ## 🔧 Setting up the Environment for Windows
 
-  Give unrestricted script access to powershell so venv can work:
+Give unrestricted script access to PowerShell so venv can work:
 
-- Open an administrator powershell window
+- Open an administrator PowerShell window
 - Type `Set-ExecutionPolicy Unrestricted` and answer A
-- Close admin powershell window
+- Close admin PowerShell window
 
 ## Installation
 
 Clone the repo with `--recurse-submodules`:
 
 ```
-git clone --recurse-submodules https://github.com/sdbds/ACE-Step-1.5-for-windows.git -b qinglong
+git clone --recurse-submodules https://github.com/scragnog/ACE-Step-1.5-for-windows.git -b qinglong
 ```
 
-# MUST USE --recurse-submodules
+> ⚠️ **MUST USE `--recurse-submodules`** — the UI is a git submodule.
 
-### Change Default Model
-copy .env.sample and rename to .env
-then change model name for which your choose.
+### Install Dependencies
 
-### Windows
 Run the following PowerShell script:
 ```powershell
 ./1、install-uv-qinglong.ps1
 ```
-### (Optional)
 
-#### VS Studio 2022 for torch compile
-Download from Microsoft offical link:
+### (Optional) VS Studio 2022 for torch compile
+Download from Microsoft official link:
 https://aka.ms/vs/17/release/vs_community.exe
 
-Install C++ desktop and language package with English(especially for asian computer)
+Install C++ desktop and language package with English (especially for Asian computers).
 
 ### FFMPEG
 
 https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.0-latest-win64-gpl-shared-8.0.zip
 
-use shared version for ffmpeg
+Use the shared version for ffmpeg.
+
+### Change Default Model
+Copy `.env.sample` and rename to `.env`, then change the model name to your preference.
 
 ### Linux
 1. First install PowerShell:
@@ -88,7 +95,7 @@ use shared version for ffmpeg
 ```powershell
 sudo pwsh ./1、install-uv-qinglong.ps1
 ```
-use sudo pwsh if you in Linux without root user.
+Use `sudo pwsh` if you are on Linux without root user.
 
 ## Usage
 
@@ -118,3 +125,11 @@ If you prefer to start services independently:
 ```
 
 Then open http://localhost:3000 in your browser.
+
+---
+
+## Credits
+
+- **ACE-Step 1.5** — [ace-step/ACE-Step-1.5](https://github.com/ace-step/ACE-Step-1.5) (original model & backend)
+- **Windows integration** — [sdbds/ACE-Step-1.5-for-windows](https://github.com/sdbds/ACE-Step-1.5-for-windows) (upstream fork)
+- **Frontend** — [fspecii/ace-step-ui](https://github.com/fspecii/ace-step-ui) (original UI)
