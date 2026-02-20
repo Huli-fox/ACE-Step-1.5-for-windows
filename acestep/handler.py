@@ -8,6 +8,7 @@ import sys
 # Disable tokenizers parallelism to avoid fork warning
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
+import gc
 import math
 from copy import deepcopy
 import tempfile
@@ -926,6 +927,127 @@ class AceStepHandler(
         except Exception as e:
             error_msg = f"âŒ Error initializing model: {str(e)}\n\nTraceback:\n{traceback.format_exc()}"
             logger.exception("[initialize_service] Error initializing model")
+            return error_msg, False
+
+    def switch_dit_model(self, config_path: str, use_flash_attention: bool = False) -> Tuple[str, bool]:
+        """
+        Switch only the DiT model weights, reusing VAE and TextEncoder.
+
+        Args:
+            config_path: Model config directory name (e.g., "acestep-v15-sft")
+            use_flash_attention: Whether to use flash attention
+
+        Returns:
+            (status_message, success)
+        """
+        try:
+            if self.vae is None or self.text_encoder is None:
+                return "❌ Handler not initialized. Call initialize_service first.", False
+
+            actual_project_root = self._get_project_root()
+            checkpoint_dir = os.path.join(actual_project_root, "checkpoints")
+
+            # Auto-download if not present
+            from pathlib import Path
+            checkpoint_path = Path(checkpoint_dir)
+            if not check_model_exists(config_path, checkpoint_path):
+                logger.info(f"[switch_dit_model] DiT model '{config_path}' not found, downloading...")
+                success, msg = ensure_dit_model(config_path, checkpoint_path)
+                if not success:
+                    return f"❌ Failed to download DiT model '{config_path}': {msg}", False
+                logger.info(f"[switch_dit_model] {msg}")
+
+            acestep_v15_checkpoint_path = os.path.join(checkpoint_dir, config_path)
+            if not os.path.exists(acestep_v15_checkpoint_path):
+                return f"❌ Model path not found: {acestep_v15_checkpoint_path}", False
+
+            # Unload LoRA before switching
+            if self.lora_loaded:
+                try:
+                    self.unload_lora()
+                except Exception as e:
+                    logger.warning(f"[switch_dit_model] Failed to unload LoRA cleanly: {e}")
+
+            # Force-reset adapter state regardless of unload success
+            self._base_decoder = None
+            self._active_loras = {}
+            self._lora_adapter_registry = {}
+            self._lora_active_adapter = None
+            self.use_lora = False
+            self.lora_loaded = False
+
+            # Free old model to reclaim VRAM
+            old_model = self.model
+            self.model = None
+
+            old_silence = self.silence_latent
+            self.silence_latent = None
+            if old_silence is not None:
+                del old_silence
+
+            if old_model is not None:
+                try:
+                    old_model.to("cpu")
+                except Exception:
+                    pass
+                del old_model
+
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+            # Load new DiT model
+            if use_flash_attention and self.is_flash_attention_available():
+                attn_implementation = "flash_attention_2"
+            else:
+                attn_implementation = "sdpa"
+
+            try:
+                logger.info(f"[switch_dit_model] Loading DiT model: {config_path} (attn={attn_implementation})")
+                self.model = AutoModel.from_pretrained(
+                    acestep_v15_checkpoint_path,
+                    trust_remote_code=True,
+                    attn_implementation=attn_implementation,
+                    torch_dtype=self.dtype,
+                )
+            except Exception as e:
+                logger.warning(f"[switch_dit_model] Failed with {attn_implementation}: {e}")
+                if attn_implementation == "sdpa":
+                    attn_implementation = "eager"
+                    self.model = AutoModel.from_pretrained(
+                        acestep_v15_checkpoint_path,
+                        trust_remote_code=True,
+                        attn_implementation=attn_implementation,
+                        torch_dtype=self.dtype,
+                    )
+                else:
+                    raise
+
+            self.model.config._attn_implementation = attn_implementation
+            self.config = self.model.config
+
+            # Move to device
+            if not self.offload_to_cpu:
+                self.model = self.model.to(self.device).to(self.dtype)
+            else:
+                if not self.offload_dit_to_cpu:
+                    self.model = self.model.to(self.device).to(self.dtype)
+                else:
+                    self.model = self.model.to("cpu").to(self.dtype)
+            self.model.eval()
+
+            # Reload silence latent
+            silence_latent_path = os.path.join(acestep_v15_checkpoint_path, "silence_latent.pt")
+            if os.path.exists(silence_latent_path):
+                self.silence_latent = torch.load(silence_latent_path, weights_only=True).transpose(1, 2)
+                self.silence_latent = self.silence_latent.to(self.device).to(self.dtype)
+
+            logger.info(f"[switch_dit_model] Switched to {config_path} on {self.device}")
+            return f"✅ Switched to {config_path}", True
+
+        except Exception as e:
+            error_msg = f"❌ Error switching model: {str(e)}"
+            logger.exception("[switch_dit_model] Error")
             return error_msg, False
     
     def switch_to_training_preset(self) -> Tuple[str, bool]:

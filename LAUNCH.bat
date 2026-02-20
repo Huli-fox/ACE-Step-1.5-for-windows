@@ -41,6 +41,14 @@ if not exist "ace-step-ui\server\node_modules" (
 echo   Done.
 echo.
 
+REM ---- Step 2b: Rebuild server TypeScript ----
+echo [2b/4] Building server...
+cd ace-step-ui\server
+call npx tsc 2>nul
+cd ..\..
+echo   Done.
+echo.
+
 REM ---- Step 3: Start Python API server via existing PS1 script ----
 echo [3/4] Starting Python API server...
 start "ACE-Step Python API" powershell -ExecutionPolicy Bypass -Command "Set-Location '%~dp0'; & '.\3、run_server.ps1'"

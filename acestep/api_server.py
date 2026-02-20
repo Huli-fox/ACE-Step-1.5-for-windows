@@ -3167,7 +3167,7 @@ def create_app() -> FastAPI:
             "avg_job_seconds": avg_job_seconds,
         })
 
-    @app.get("/v1/models")
+    @app.get("/v1/models/list")
     async def list_models(_: None = Depends(verify_api_key)):
         """List available DiT models (includes all downloadable models)."""
         current_model = _get_model_name(app.state._config_path) if getattr(app.state, "_initialized", False) else None
@@ -3217,6 +3217,38 @@ def create_app() -> FastAPI:
         return _wrap_response({
             "active_model": current_model,
         })
+
+    @app.post("/v1/models/switch")
+    async def switch_model_endpoint(request: Request, _: None = Depends(verify_api_key)):
+        """Explicitly switch the primary handler's DiT model."""
+        handler: AceStepHandler = app.state.handler
+        if handler is None:
+            raise HTTPException(status_code=500, detail="Handler not initialized")
+
+        body = await request.json()
+        target_model = body.get("model")
+        if not target_model:
+            raise HTTPException(status_code=400, detail="'model' field is required")
+
+        current_model = _get_model_name(app.state._config_path) if getattr(app.state, "_initialized", False) else None
+        if target_model == current_model:
+            return _wrap_response({
+                "message": f"Model '{target_model}' is already active",
+                "active_model": current_model,
+                "switched": False,
+            })
+
+        use_flash = getattr(app.state, "_use_flash_attention", True)
+        status_msg, ok = handler.switch_dit_model(target_model, use_flash_attention=use_flash)
+        if ok:
+            app.state._config_path = target_model
+            return _wrap_response({
+                "message": status_msg,
+                "active_model": target_model,
+                "switched": True,
+            })
+        else:
+            raise HTTPException(status_code=500, detail=status_msg)
 
     @app.post("/create_random_sample")
     async def create_random_sample_endpoint(request: Request, authorization: Optional[str] = Header(None)):
