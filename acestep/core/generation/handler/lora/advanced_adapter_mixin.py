@@ -128,6 +128,15 @@ def _extract_adapter_delta(self, lora_path: str) -> dict:
             if hasattr(lokr_cfg, k):
                 setattr(lokr_cfg, k, v)
 
+        # Snapshot all hook IDs on every decoder sub-module BEFORE injection
+        # so we can remove only the NEW hooks that LyCORIS adds.
+        pre_hooks = {}
+        for name, module in self.model.decoder.named_modules():
+            fwd = set(getattr(module, '_forward_hooks', {}).keys())
+            pre = set(getattr(module, '_forward_pre_hooks', {}).keys())
+            if fwd or pre:
+                pre_hooks[name] = (fwd, pre)
+
         self.model, lycoris_net, _ = inject_lokr_into_dit(self.model, lokr_cfg)
         # Load weights directly (bypasses safe_path which restricts to cwd)
         lycoris_net.load_weights(lokr_weights_path)
@@ -143,41 +152,30 @@ def _extract_adapter_delta(self, lora_path: str) -> dict:
             pass
 
         # === Critical cleanup ===
-        # LyCORIS apply_to() registers forward hooks on decoder sub-modules.
-        # restore() only un-bakes weight modifications from merge_to() but does
-        # NOT remove those hooks.  If left in place, the hooks fire during
-        # inference ON TOP of the already-merged weights, effectively doubling
-        # the last adapter's contribution and producing garbled audio.
-        # Remove all LyCORIS-owned hooks so the decoder runs with ONLY the
-        # weight-space merged values.
-        try:
-            for module in self.model.decoder.modules():
-                # LyCORIS hooks are registered via module.register_forward_hook /
-                # register_forward_pre_hook.  They store a reference to the
-                # LyCORIS module.  We remove hooks whose callback is associated
-                # with a lycoris module.
-                hooks_to_remove = []
-                for hook_id, hook in getattr(module, '_forward_hooks', {}).items():
-                    hook_fn = getattr(hook, 'fn', hook) if hasattr(hook, 'fn') else hook
-                    mod = getattr(hook_fn, '__self__', None)
-                    if mod is not None and type(mod).__module__ and 'lycoris' in type(mod).__module__:
-                        hooks_to_remove.append(hook_id)
-                for hid in hooks_to_remove:
-                    del module._forward_hooks[hid]
+        # Remove ALL hooks that were added by inject_lokr_into_dit / apply_to().
+        # LyCORIS restore() only un-bakes merge_to() weight changes but does NOT
+        # remove forward hooks.  Without this cleanup, the last adapter's hooks
+        # fire during inference ON TOP of the weight-space merged values.
+        removed_count = 0
+        for name, module in self.model.decoder.named_modules():
+            old_fwd, old_pre = pre_hooks.get(name, (set(), set()))
 
-                hooks_to_remove = []
-                for hook_id, hook in getattr(module, '_forward_pre_hooks', {}).items():
-                    hook_fn = getattr(hook, 'fn', hook) if hasattr(hook, 'fn') else hook
-                    mod = getattr(hook_fn, '__self__', None)
-                    if mod is not None and type(mod).__module__ and 'lycoris' in type(mod).__module__:
-                        hooks_to_remove.append(hook_id)
-                for hid in hooks_to_remove:
-                    del module._forward_pre_hooks[hid]
-        except Exception as e:
-            logger.warning(f"LyCORIS hook cleanup failed (non-fatal): {e}")
+            # Remove new forward hooks
+            new_fwd = set(getattr(module, '_forward_hooks', {}).keys()) - old_fwd
+            for hid in new_fwd:
+                del module._forward_hooks[hid]
+                removed_count += 1
 
-        # Remove the reference so inject_lokr_into_dit won't try to restore
-        # a stale/deleted object on the next call.
+            # Remove new forward pre-hooks
+            new_pre = set(getattr(module, '_forward_pre_hooks', {}).keys()) - old_pre
+            for hid in new_pre:
+                del module._forward_pre_hooks[hid]
+                removed_count += 1
+
+        if removed_count:
+            logger.info(f"Removed {removed_count} LyCORIS hooks from decoder")
+
+        # Clean up the lycoris_net reference
         try:
             if hasattr(self.model.decoder, '_lycoris_net'):
                 delattr(self.model.decoder, '_lycoris_net')
