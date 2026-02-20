@@ -222,12 +222,22 @@ def _apply_merged_weights(self) -> None:
     if self._base_decoder is None:
         return
 
+    # --- Diagnostic: count hooks on decoder BEFORE merge ---
+    hook_count = 0
+    for m in self.model.decoder.modules():
+        hook_count += len(getattr(m, '_forward_hooks', {}))
+        hook_count += len(getattr(m, '_forward_pre_hooks', {}))
+    logger.info(f"[DIAG] _apply_merged_weights: decoder has {hook_count} total hooks BEFORE merge")
+    logger.info(f"[DIAG] use_lora={self.use_lora}, lora_loaded={getattr(self, 'lora_loaded', '?')}, "
+                f"slots={list(self._adapter_slots.keys())}")
+
     active_slots = {
         sid: s for sid, s in self._adapter_slots.items()
         if s["scale"] > 0 and self.use_lora
     }
 
     if not active_slots:
+        logger.info(f"[DIAG] No active slots (use_lora={self.use_lora}), restoring base decoder")
         self.model.decoder.load_state_dict(self._base_decoder, strict=False)
         self.model.decoder = self.model.decoder.to(self.device).to(self.dtype)
         self.model.decoder.eval()
@@ -237,11 +247,20 @@ def _apply_merged_weights(self) -> None:
             torch.cuda.empty_cache()
         return
 
+    # Log slot details
+    for sid, s in active_slots.items():
+        delta_norm = sum(v.float().norm().item() for v in s["delta"].values()) / max(len(s["delta"]), 1)
+        logger.info(f"[DIAG] Slot {sid}: name={s['name']}, scale={s['scale']:.3f}, "
+                    f"type={s['type']}, delta_keys={len(s['delta'])}, avg_delta_norm={delta_norm:.6f}")
+
     t0 = time.time()
     merged = {}
     all_keys = set()
     for s in active_slots.values():
         all_keys.update(s["delta"].keys())
+
+    # Sample a few keys for diagnostic
+    sample_keys = sorted(all_keys)[:3]
 
     for k in self._base_decoder:
         base_val = self._base_decoder[k]
@@ -251,12 +270,25 @@ def _apply_merged_weights(self) -> None:
                 if k in s["delta"]:
                     combined = combined + s["scale"] * s["delta"][k]
             merged[k] = combined.to(dtype=base_val.dtype)
+
+            # Log a few sample keys
+            if k in sample_keys:
+                base_norm = base_val.float().norm().item()
+                merged_norm = merged[k].float().norm().item()
+                logger.info(f"[DIAG] Key '{k}': base_norm={base_norm:.4f} -> merged_norm={merged_norm:.4f}")
         else:
             merged[k] = base_val
 
     self.model.decoder.load_state_dict(merged, strict=False)
     self.model.decoder = self.model.decoder.to(self.device).to(self.dtype)
     self.model.decoder.eval()
+
+    # --- Diagnostic: count hooks on decoder AFTER merge ---
+    hook_count_after = 0
+    for m in self.model.decoder.modules():
+        hook_count_after += len(getattr(m, '_forward_hooks', {}))
+        hook_count_after += len(getattr(m, '_forward_pre_hooks', {}))
+    logger.info(f"[DIAG] decoder has {hook_count_after} total hooks AFTER merge")
 
     del merged
     gc.collect()
