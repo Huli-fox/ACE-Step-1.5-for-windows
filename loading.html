@@ -283,14 +283,14 @@
             } catch { return false; }
         }
 
-        // Probe the Python API's /v1/models/status to check if models are loaded
+        // Probe the Python API's /v1/models to check if models are loaded
         // This endpoint returns { data: { active_model: "model-name" } } when ready
         // and { data: { active_model: null } } when models are still loading
         async function probeApiReady(timeout = 3000) {
             try {
                 const c = new AbortController();
                 const t = setTimeout(() => c.abort(), timeout);
-                const r = await fetch('http://localhost:8001/v1/models/status', {
+                const r = await fetch('http://localhost:8001/v1/models', {
                     signal: c.signal,
                     headers: { 'Accept': 'application/json' },
                 });
