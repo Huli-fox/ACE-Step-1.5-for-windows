@@ -83,10 +83,10 @@ echo =============================================
 echo.
 echo   Python API:  http://localhost:8001
 echo   Backend:     http://localhost:3001
-echo   Frontend:    http://localhost:3456
+echo   Frontend:    http://localhost:3000
 echo.
 if defined LOCAL_IP (
-    echo   LAN Access:  http://%LOCAL_IP%:3456
+    echo   LAN Access:  http://%LOCAL_IP%:3000
     echo.
 )
 echo   Three windows opened:
@@ -101,6 +101,6 @@ echo.
 REM Open browser
 echo Opening browser...
 timeout /t 2 /nobreak >nul
-start http://localhost:3456
+start http://localhost:3000
 
 pause

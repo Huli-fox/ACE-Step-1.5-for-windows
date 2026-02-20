@@ -64,7 +64,7 @@ echo   all services are ready.
 echo.
 echo   Python API:  http://localhost:8001
 echo   Backend:     http://localhost:3001
-echo   Frontend:    http://localhost:3456
+echo   Frontend:    http://localhost:3000
 echo.
 echo   Two minimized windows are running:
 echo     - Python API (run_server.ps1)

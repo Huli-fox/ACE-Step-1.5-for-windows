@@ -117,4 +117,4 @@ If you prefer to start services independently:
 4、run_npmgui.ps1
 ```
 
-Then open http://localhost:3456 in your browser.
+Then open http://localhost:3000 in your browser.

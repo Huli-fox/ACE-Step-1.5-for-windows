@@ -235,7 +235,7 @@
 
             <li id="s-frontend">
                 <span class="icon pending" id="i-frontend"></span>
-                <span>Vite Frontend <small style="color:#555">(port 3456)</small></span>
+                <span>Vite Frontend <small style="color:#555">(port 3000)</small></span>
             </li>
         </ul>
 
@@ -334,7 +334,7 @@
             // ---- Vite frontend ----
             if (!state.frontend) {
                 setIcon('i-frontend', 'running'); setRow('s-frontend', 'running');
-                state.frontend = await probeNoCors('http://localhost:3456');
+                state.frontend = await probeNoCors('http://localhost:3000');
             }
             if (state.frontend) { setIcon('i-frontend', 'done'); setRow('s-frontend', 'done'); }
 
@@ -344,7 +344,7 @@
                 document.getElementById('spinnerWrap').style.display = 'none';
                 document.getElementById('readyBanner').classList.add('show');
                 document.getElementById('elapsed').textContent = `All ready in ${elapsed()} — redirecting…`;
-                setTimeout(() => { window.location.href = 'http://localhost:3456'; }, 1500);
+                setTimeout(() => { window.location.href = 'http://localhost:3000'; }, 1500);
             } else {
                 setTimeout(poll, 2500);
             }
