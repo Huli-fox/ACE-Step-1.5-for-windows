@@ -6,6 +6,13 @@ description: how to develop and ship a new feature branch
 
 // turbo-all
 
+## Current Goal
+
+Port and merge features that were hastily added to `D:\Ace-Step-Latest\ACE-Step-1.5-for-windows-custombuild` into `D:\Ace-Step-Latest\ACE-Step-1.5-for-windows` **one by one**, each on its own feature branch. Each feature branch is pushed to GitHub and merged into the main branch (`qinglong`).
+
+- **Source (messy):** `ACE-Step-1.5-for-windows-custombuild` — contains working but unstructured features
+- **Target (clean):** `ACE-Step-1.5-for-windows` — each feature gets a clean branch, review, and merge
+
 ## Setup
 
 The repo is at `D:\Ace-Step-Latest\ACE-Step-1.5-for-windows`.

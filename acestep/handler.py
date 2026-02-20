@@ -70,6 +70,7 @@ from acestep.core.generation.handler import (
     ServiceGenerateExecuteMixin,
     ServiceGenerateOutputsMixin,
 )
+from acestep.core.generation.handler.lora.advanced_adapter_mixin import AdvancedAdapterMixin
 from acestep.gpu_config import get_gpu_memory_gb, get_global_gpu_config, get_effective_free_vram_gb
 
 
@@ -91,6 +92,7 @@ class AceStepHandler(
     InitServiceMixin,
     LyricScoreMixin,
     LyricTimestampMixin,
+    AdvancedAdapterMixin,
     LoraManagerMixin,
     MemoryUtilsMixin,
     MetadataMixin,
@@ -166,6 +168,12 @@ class AceStepHandler(
         self._active_loras = {}  # adapter_name -> scale (per-adapter)
         self._lora_adapter_registry = {}  # adapter_name -> explicit scaling targets
         self._lora_active_adapter = None
+
+        # Advanced adapter state (slot-based weight-space merging)
+        self._adapter_slots = {}      # slot_id -> {path, name, type, delta, scale, group_scales}
+        self._next_slot_id = 0
+        self._merged_dirty = False
+        self.lora_group_scales = {"self_attn": 1.0, "cross_attn": 1.0, "mlp": 1.0}
 
         # MLX DiT acceleration (macOS Apple Silicon only)
         self.mlx_decoder = None

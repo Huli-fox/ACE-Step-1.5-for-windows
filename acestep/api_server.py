@@ -623,15 +623,34 @@ class GenerateMusicRequest(BaseModel):
 class LoadLoRARequest(BaseModel):
     lora_path: str = Field(..., description="Path to LoRA adapter directory or LoKr/LyCORIS safetensors file")
     adapter_name: Optional[str] = Field(default=None, description="Optional adapter name (uses path-derived name if omitted)")
+    slot: Optional[int] = Field(default=None, description="Slot number for advanced multi-adapter mode (0-3)")
 
 
 class SetLoRAScaleRequest(BaseModel):
     adapter_name: Optional[str] = Field(default=None, description="Optional adapter name; defaults to active adapter")
-    scale: float = Field(..., ge=0.0, le=1.0, description="LoRA scale (0.0-1.0)")
+    scale: float = Field(..., ge=0.0, le=2.0, description="LoRA scale (0.0-2.0)")
+    slot: Optional[int] = Field(default=None, description="Slot number for advanced mode")
 
 
 class ToggleLoRARequest(BaseModel):
     use_lora: bool = Field(..., description="Enable or disable LoRA")
+
+
+class SetGroupScalesRequest(BaseModel):
+    self_attn: float = Field(default=1.0, ge=0.0, le=2.0, description="Self-attention group scale")
+    cross_attn: float = Field(default=1.0, ge=0.0, le=2.0, description="Cross-attention group scale")
+    mlp: float = Field(default=1.0, ge=0.0, le=2.0, description="MLP/feed-forward group scale")
+
+
+class SetSlotGroupScalesRequest(BaseModel):
+    slot: int = Field(..., description="Slot number (0-3)")
+    self_attn: float = Field(default=1.0, ge=0.0, le=2.0, description="Self-attention group scale")
+    cross_attn: float = Field(default=1.0, ge=0.0, le=2.0, description="Cross-attention group scale")
+    mlp: float = Field(default=1.0, ge=0.0, le=2.0, description="MLP/feed-forward group scale")
+
+
+class UnloadLoRARequest(BaseModel):
+    slot: Optional[int] = Field(default=None, description="Slot to unload (None = unload all)")
 
 
 def _stop_tensorboard(app: FastAPI) -> None:
@@ -3420,6 +3439,15 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=500, detail="Model not initialized")
 
         try:
+            # Advanced mode: slot-based loading
+            if request.slot is not None:
+                result = handler.load_lora_slot(request.lora_path, slot=request.slot)
+                if result.startswith("✅"):
+                    return _wrap_response({"message": result, "lora_path": request.lora_path, "slot": request.slot})
+                else:
+                    raise HTTPException(status_code=400, detail=result)
+
+            # Basic mode: original PEFT-based loading
             adapter_name = request.adapter_name.strip() if isinstance(request.adapter_name, str) else None
             if adapter_name:
                 result = handler.add_lora(request.lora_path, adapter_name=adapter_name)
@@ -3439,7 +3467,7 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=500, detail=f"Failed to load LoRA: {str(e)}")
 
     @app.post("/v1/lora/unload")
-    async def unload_lora_endpoint(_: None = Depends(verify_api_key)):
+    async def unload_lora_endpoint(request: Request, _: None = Depends(verify_api_key)):
         """Unload LoRA adapter and restore base model."""
         handler: AceStepHandler = app.state.handler
 
@@ -3447,7 +3475,22 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=500, detail="Model not initialized")
 
         try:
-            result = handler.unload_lora()
+            # Check for slot param in body (advanced mode)
+            slot = None
+            try:
+                body = await request.json()
+                slot = body.get("slot")
+            except Exception:
+                pass
+
+            if slot is not None:
+                result = handler.unload_lora_slot(slot=int(slot))
+            else:
+                # If we have advanced slots loaded, unload all of them
+                if hasattr(handler, '_adapter_slots') and handler._adapter_slots:
+                    result = handler.unload_lora_slot(slot=None)
+                else:
+                    result = handler.unload_lora()
 
             if result.startswith("✅") or result.startswith("⚠️"):
                 return _wrap_response({"message": result})
@@ -3510,7 +3553,7 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=500, detail="Model not initialized")
 
         status = handler.get_lora_status()
-        return _wrap_response({
+        result = {
             # Legacy fields for existing clients
             "lora_loaded": bool(status.get("loaded", getattr(handler, "lora_loaded", False))),
             "use_lora": bool(status.get("active", getattr(handler, "use_lora", False))),
@@ -3521,7 +3564,72 @@ def create_app() -> FastAPI:
             "active_adapter": status.get("active_adapter"),
             "adapters": status.get("adapters", []),
             "synthetic_default_mode": bool(status.get("synthetic_default_mode", False)),
-        })
+        }
+
+        # Include advanced adapter info if any slots are loaded
+        if hasattr(handler, "get_advanced_lora_status"):
+            advanced = handler.get_advanced_lora_status()
+            result["advanced"] = advanced
+
+        return _wrap_response(result)
+
+    @app.post("/v1/lora/group-scales")
+    async def set_group_scales_endpoint(request: SetGroupScalesRequest, _: None = Depends(verify_api_key)):
+        """Set per-module-group global scales for all adapter slots."""
+        handler: AceStepHandler = app.state.handler
+
+        if handler is None or handler.model is None:
+            raise HTTPException(status_code=500, detail="Model not initialized")
+
+        try:
+            result = handler.set_lora_group_scales(
+                self_attn_scale=request.self_attn,
+                cross_attn_scale=request.cross_attn,
+                mlp_scale=request.mlp,
+            )
+            if result.startswith("✅"):
+                return _wrap_response({
+                    "message": result,
+                    "group_scales": {
+                        "self_attn": request.self_attn,
+                        "cross_attn": request.cross_attn,
+                        "mlp": request.mlp,
+                    },
+                })
+            else:
+                return _wrap_response(None, code=400, error=result)
+        except Exception as e:
+            return _wrap_response(None, code=500, error=f"Failed to set group scales: {str(e)}")
+
+    @app.post("/v1/lora/slot-group-scales")
+    async def set_slot_group_scales_endpoint(request: SetSlotGroupScalesRequest, _: None = Depends(verify_api_key)):
+        """Set per-group LoRA scales for a specific adapter slot."""
+        handler: AceStepHandler = app.state.handler
+
+        if handler is None or handler.model is None:
+            raise HTTPException(status_code=500, detail="Model not initialized")
+
+        try:
+            result = handler.set_slot_group_scales(
+                slot=request.slot,
+                self_attn_scale=request.self_attn,
+                cross_attn_scale=request.cross_attn,
+                mlp_scale=request.mlp,
+            )
+            if result.startswith("✅"):
+                return _wrap_response({
+                    "message": result,
+                    "slot": request.slot,
+                    "group_scales": {
+                        "self_attn": request.self_attn,
+                        "cross_attn": request.cross_attn,
+                        "mlp": request.mlp,
+                    },
+                })
+            else:
+                return _wrap_response(None, code=400, error=result)
+        except Exception as e:
+            return _wrap_response(None, code=500, error=f"Failed to set slot group scales: {str(e)}")
 
     @app.post("/v1/reinitialize")
     async def reinitialize_service(_: None = Depends(verify_api_key)):
