@@ -3534,7 +3534,7 @@ def create_app() -> FastAPI:
         try:
             # Advanced mode: slot-based scale
             if request.slot is not None:
-                result = handler.set_lora_slot_scale(request.slot, request.scale)
+                result = handler.set_lora_slot_scale(request.scale, request.slot)
                 if result.startswith("✅"):
                     return _wrap_response({"message": result, "scale": request.scale, "slot": request.slot})
                 else:
