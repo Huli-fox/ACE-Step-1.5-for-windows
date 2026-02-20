@@ -3206,6 +3206,18 @@ def create_app() -> FastAPI:
             "active_model": current_model,
         })
 
+    @app.get("/v1/models/status")
+    async def list_models_status():
+        """Lightweight model status check (no auth required).
+
+        Used by loading.html to detect when models are fully loaded.
+        Returns active_model: null until initialization is complete.
+        """
+        current_model = _get_model_name(app.state._config_path) if getattr(app.state, "_initialized", False) else None
+        return _wrap_response({
+            "active_model": current_model,
+        })
+
     @app.post("/create_random_sample")
     async def create_random_sample_endpoint(request: Request, authorization: Optional[str] = Header(None)):
         """
