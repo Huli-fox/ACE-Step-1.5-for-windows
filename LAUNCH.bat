@@ -96,6 +96,6 @@ echo.
 echo   Close those windows to stop the services.
 echo =============================================
 echo.
-echo Press any key to close this launcher window...
-echo (Services will keep running in the background)
-pause >nul
+echo   This window will close automatically.
+echo   (Services will keep running in the background)
+timeout /t 5 /nobreak >nul

@@ -43,6 +43,7 @@ class GenerateMusicMixin:
         cover_noise_strength: float = 0.0,
         task_type: str = "text2music",
         use_adg: bool = False,
+        guidance_mode: str = "",
         cfg_interval_start: float = 0.0,
         cfg_interval_end: float = 1.0,
         shift: float = 1.0,
@@ -51,6 +52,11 @@ class GenerateMusicMixin:
         timesteps: Optional[List[float]] = None,
         latent_shift: float = 0.0,
         latent_rescale: float = 1.0,
+        # PAG (Perturbed-Attention Guidance) Parameters
+        use_pag: bool = False,
+        pag_start: float = 0.30,
+        pag_end: float = 0.80,
+        pag_scale: float = 0.2,
         progress=None,
     ) -> Dict[str, Any]:
         """Generate audio from text/reference inputs and return response payload.
@@ -146,11 +152,15 @@ class GenerateMusicMixin:
                 actual_seed_list=actual_seed_list,
                 audio_cover_strength=audio_cover_strength,
                 cover_noise_strength=cover_noise_strength,
-                use_adg=use_adg,
+                guidance_mode=guidance_mode if guidance_mode else ("adg" if use_adg else "apg"),
                 cfg_interval_start=cfg_interval_start,
                 cfg_interval_end=cfg_interval_end,
                 shift=shift,
                 infer_method=infer_method,
+                use_pag=use_pag,
+                pag_start=pag_start,
+                pag_end=pag_end,
+                pag_scale=pag_scale,
             )
             outputs = service_run["outputs"]
             infer_steps_for_progress = service_run["infer_steps_for_progress"]

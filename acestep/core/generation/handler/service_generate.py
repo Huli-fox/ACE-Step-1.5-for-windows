@@ -37,12 +37,18 @@ class ServiceGenerateMixin:
         audio_cover_strength: float = 1.0,
         cover_noise_strength: float = 0.0,
         use_adg: bool = False,
+        guidance_mode: str = "",
         cfg_interval_start: float = 0.0,
         cfg_interval_end: float = 1.0,
         shift: float = 1.0,
         audio_code_hints: Optional[Union[str, List[str]]] = None,
         infer_method: str = "ode",
         timesteps: Optional[List[float]] = None,
+        # PAG (Perturbed-Attention Guidance) Parameters
+        use_pag: bool = False,
+        pag_start: float = 0.30,
+        pag_end: float = 0.80,
+        pag_scale: float = 0.2,
     ) -> Dict[str, Any]:
         """Generate music latents and metadata from text/audio conditioning inputs.
 
@@ -119,11 +125,15 @@ class ServiceGenerateMixin:
             audio_cover_strength=audio_cover_strength,
             cover_noise_strength=cover_noise_strength,
             infer_method=infer_method,
-            use_adg=use_adg,
+            guidance_mode=guidance_mode if guidance_mode else ("adg" if use_adg else "apg"),
             cfg_interval_start=cfg_interval_start,
             cfg_interval_end=cfg_interval_end,
             shift=shift,
             timesteps=timesteps,
+            use_pag=use_pag,
+            pag_start=pag_start,
+            pag_end=pag_end,
+            pag_scale=pag_scale,
         )
         outputs, encoder_hidden_states, encoder_attention_mask, context_latents = (
             self._execute_service_generate_diffusion(
