@@ -577,9 +577,15 @@ class GenerateMusicRequest(BaseModel):
     full_analysis_only: bool = False
 
     use_adg: bool = False
+    guidance_mode: str = ""
     cfg_interval_start: float = 0.0
     cfg_interval_end: float = 1.0
-    infer_method: str = "ode"  # "ode" or "sde" - diffusion inference method
+    infer_method: str = "ode"  # "ode", "sde", or "dpmsde" - diffusion inference method
+    # PAG (Perturbed-Attention Guidance) Parameters
+    use_pag: bool = False
+    pag_start: float = 0.30
+    pag_end: float = 0.80
+    pag_scale: float = 0.2
     shift: float = Field(
         default=3.0,
         description="Timestep shift factor (range 1.0~5.0, default 3.0). Only effective for base models, not turbo models."
@@ -2136,10 +2142,15 @@ def create_app() -> FastAPI:
                     seed=req.seed,
                     guidance_scale=req.guidance_scale,
                     use_adg=req.use_adg,
+                    guidance_mode=req.guidance_mode,
                     cfg_interval_start=req.cfg_interval_start,
                     cfg_interval_end=req.cfg_interval_end,
                     shift=req.shift,
                     infer_method=req.infer_method,
+                    use_pag=req.use_pag,
+                    pag_start=req.pag_start,
+                    pag_end=req.pag_end,
+                    pag_scale=req.pag_scale,
                     timesteps=parsed_timesteps,
                     repainting_start=req.repainting_start,
                     repainting_end=req.repainting_end if req.repainting_end else -1,
@@ -2874,9 +2885,14 @@ def create_app() -> FastAPI:
                 src_audio_path=src_audio,
                 task_type=p.str("task_type", "text2music"),
                 use_adg=p.bool("use_adg"),
+                guidance_mode=p.str("guidance_mode", ""),
                 cfg_interval_start=p.float("cfg_interval_start", 0.0),
                 cfg_interval_end=p.float("cfg_interval_end", 1.0),
                 infer_method=p.str("infer_method", "ode"),
+                use_pag=p.bool("use_pag"),
+                pag_start=p.float("pag_start", 0.30),
+                pag_end=p.float("pag_end", 0.80),
+                pag_scale=p.float("pag_scale", 0.2),
                 shift=p.float("shift", 3.0),
                 audio_format=p.str("audio_format", "mp3"),
                 use_tiled_decode=p.bool("use_tiled_decode", True),

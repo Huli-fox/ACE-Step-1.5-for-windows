@@ -56,6 +56,14 @@ cd ..\..
 echo   Done.
 echo.
 
+REM ---- Step 2c: Clear Python bytecode cache for fresh code ----
+echo [2c/4] Clearing Python bytecode cache...
+for /d /r "acestep" %%d in (__pycache__) do (
+    if exist "%%d" rd /s /q "%%d"
+)
+echo   Done.
+echo.
+
 REM ---- Step 3: Start Python API server via existing PS1 script ----
 echo [3/4] Starting Python API server...
 start /min "ACE-Step Python API" powershell -ExecutionPolicy Bypass -Command "Set-Location '%~dp0'; & '.\3、run_server.ps1'"

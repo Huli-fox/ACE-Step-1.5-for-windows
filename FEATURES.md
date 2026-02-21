@@ -6,6 +6,31 @@ This document tracks all new features added on top of the upstream [sdbds/ACE-St
 
 ---
 
+## Advanced Guidance & Solver Modes
+
+**Branch:** `feature/pag-dpmsde-tooltips`  
+**Status:** ✅ Merged
+
+Total overhaul of the inference backend to support 7 distinct guidance modes and 4 ODE solver algorithms, complete with UI integrations and educational tooltips.
+
+### What's included
+
+| File | Description |
+|------|-------------|
+| `acestep/core/generation/guidance.py` | **[NEW]** Central registry for Guidance modes (Plain CFG, CFG++, Dynamic CFG, Rescaled CFG, APG, ADG, PAG) |
+| `acestep/core/generation/solvers.py` | **[NEW]** Central registry for ODE Step Solvers (Euler, Heun, DPM++ 2M, RK4) |
+| `patch_checkpoints.py` | Patches base models on-the-fly to hook into the new guidance/solver registries without touching upstream code |
+| `ace-step-ui/components/CreatePanel.tsx` | Added Guidance dropdown, Inference Method dropdown, and conditional PAG detail sliders |
+| `ace-step-ui/i18n/translations.ts` | 40+ localized educational tooltips explaining every generation parameter |
+
+### How it works
+
+1. **Guidance Modes:** Choose between strict mathematical CFG variants (Plain, CFG++, Dynamic, Rescaled) or specialized audio-flow projections (APG, ADG) to control how strongly the text guides the music. PAG (Perturbed Attention Guidance) adds structural clarity independently.
+2. **Solvers:** Trade off speed vs. quality. Euler (1 eval/step) is fast. Heun (2 evals) and RK4 (4 evals) offer higher-quality numerical integration at the cost of generation speed. DPM++ 2M offers 2nd-order quality at 1 eval per step.
+3. Hovering over any parameter reveals a localized tooltip explaining what it does.
+
+---
+
 ## One-Click Launcher
 
 **Branch:** `feature/launch-system`  
