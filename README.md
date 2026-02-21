@@ -25,6 +25,9 @@ Live model switching without restarting the server. The dropdown auto-discovers 
 ### 💾 Persistent Settings
 All generation settings (style, lyrics, BPM, model, adapter paths, scales, inference params) survive page refresh via localStorage. Toggle on/off in Settings.
 
+### 🎛️ Creation Panel Reorganization
+Total UX overhaul of the Create panel. Settings are now cleanly grouped into collapsible accordions (Generation Settings, Expert Controls, Audio Adapters, Score System), reducing cognitive overload. Simple Mode provides a streamlined interface, while Custom Mode hides complex track formulation variables (Lyrics, Style, Parameters) inside a tidy Track Details section. Every single parameter now features a localized tooltip explaining its function.
+
 ### 🎵 Track List Improvements
 - Full-width waveform visualizer with shared AudioContext and LRU cache
 - Real-time generation progress (parsed from tqdm output)

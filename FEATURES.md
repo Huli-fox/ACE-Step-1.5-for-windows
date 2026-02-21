@@ -214,6 +214,31 @@ Basic mode uses PEFT runtime hooks (existing). Advanced mode uses **weight-space
 
 ---
 
+## Creation Panel Reorganization
+
+**Branch:** `feature/cot-accordion`  
+**Status:** ✅ Merged
+
+Total UX reorganization and architectural refactoring of the Create panel to reduce cognitive overload and group related settings.
+
+### What's included
+
+| File | Description |
+|------|-------------|
+| `ace-step-ui/components/CreatePanel.tsx` | Massively refactored into a layout shell delegating to ~13 modular sub-components |
+| `ace-step-ui/components/accordions/*` | **[NEW]** Generation Settings, Track Details, Adapters, Score System, Expert Controls, Guidance Settings, LmCot Accordions |
+| `ace-step-ui/components/sections/*` | **[NEW]** Audio Selection, Lyrics, Style, Music Parameters, Cover Repaint Settings, Task Type, Simple Mode Settings, Audio Library Modal |
+
+### How it works
+
+1. **Categorized Settings:** Options are now grouped into logical accordions (Generation Settings, Expert Controls, Adapters, Score System) rather than a single massive scrolling list.
+2. **Track Details Isolation:** Lyrics, Style, and Music Parameters are cleanly nested under a Track Details accordion in Custom Mode.
+3. **Simple vs Custom Mode:** Simple mode presents a cleaner top-level interface while Custom mode exposes deep configuration.
+4. **Tooltips & i18n:** Every single parameter now features a localized tooltip explaining its function.
+5. **Maintainability:** The massive 4500-line CreatePanel was decomposed into specific, maintainable UI sections and components.
+
+---
+
 <!-- 
 ## [Next Feature Name]
 
