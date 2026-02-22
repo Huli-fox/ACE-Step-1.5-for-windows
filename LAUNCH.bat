@@ -102,6 +102,12 @@ for /d /r "acestep" %%d in (__pycache__) do (
 echo   Done.
 echo.
 
+REM ---- Step 2d: Patch checkpoints for solver/guidance support ----
+echo [2d/4] Patching checkpoints for solver/guidance support...
+.venv\Scripts\python.exe patch_checkpoints.py
+echo   Done.
+echo.
+
 REM ---- Step 3: Start UI servers FIRST (Express + Vite) ----
 REM  Express starts fast (~2s), giving the loading screen time to
 REM  call /api/models/update-env before Python reads .env.

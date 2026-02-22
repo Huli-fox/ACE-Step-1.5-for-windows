@@ -7,9 +7,11 @@ the solver and guidance plugin registries. Only modifies the specific lines
 required — does NOT overwrite files wholesale.
 
 Idempotent: safe to run multiple times; skips already-patched files.
+Supports --unpatch to restore originals from .orig backups.
 
 Usage:
     python patch_checkpoints.py [--checkpoints-dir <path>] [--dry-run]
+    python patch_checkpoints.py --unpatch [--checkpoints-dir <path>]
 """
 
 import argparse
@@ -209,9 +211,77 @@ def apply_patches(filepath: Path, dry_run: bool = False) -> dict:
             report["errors"].append(f"{name} — pattern not found (may be different model version)")
 
     if content != original and not dry_run:
+        # Save .orig backup (only if one doesn't already exist — preserve true original)
+        orig_path = filepath.with_suffix(".py.orig")
+        if not orig_path.exists():
+            orig_path.write_text(original, encoding="utf-8")
         filepath.write_text(content, encoding="utf-8")
 
     report["modified"] = content != original
+    return report
+
+
+def _unescape_regex(pattern: str) -> str:
+    """Convert a regex pattern back to literal text by removing regex escapes."""
+    # Handle \\n → actual newline first (before generic unescape)
+    result = pattern.replace("\\n", "\n")
+    # Unescape special regex characters: \( -> (, \) -> ), \. -> ., \[ -> [, \] -> ]
+    result = re.sub(r'\\([.()\[\]])', r'\1', result)
+    return result
+
+
+def unpatch_file(filepath: Path) -> dict:
+    """Restore a file to its unpatched state.
+
+    Strategy:
+    1. If a .orig backup exists, restore from it (fastest, most reliable)
+    2. Otherwise, reverse-patch by replacing each patch's 'replacement' text
+       with the un-escaped original 'pattern' text (handles bootstrap case
+       where files were patched before .orig support was added)
+    """
+    orig_path = filepath.with_suffix(".py.orig")
+    report = {"file": str(filepath), "restored": False, "method": None, "error": None}
+
+    # Strategy 1: Restore from .orig backup
+    if orig_path.exists():
+        try:
+            original_content = orig_path.read_text(encoding="utf-8")
+            filepath.write_text(original_content, encoding="utf-8")
+            orig_path.unlink()  # Remove the backup after restoring
+            report["restored"] = True
+            report["method"] = "backup"
+            return report
+        except Exception as e:
+            report["error"] = f"backup restore failed: {e}"
+            return report
+
+    # Strategy 2: Reverse-patch (apply patches in reverse)
+    content = filepath.read_text(encoding="utf-8")
+    original = content
+    reversed_count = 0
+
+    for patch in reversed(PATCHES):
+        marker = patch["marker"]
+        replacement = patch["replacement"]
+        pattern = patch["pattern"]
+
+        # Only reverse patches that were applied (marker present)
+        if marker not in content:
+            continue
+
+        # Search for the replacement text (literal) and put back the original
+        original_text = _unescape_regex(pattern)
+        if replacement in content:
+            content = content.replace(replacement, original_text, 1)
+            reversed_count += 1
+
+    if content != original:
+        filepath.write_text(content, encoding="utf-8")
+        report["restored"] = True
+        report["method"] = f"reverse-patch ({reversed_count} patches reversed)"
+    else:
+        report["error"] = "no .orig backup and reverse-patch found nothing to reverse"
+
     return report
 
 
@@ -223,11 +293,10 @@ def main():
         help="Path to checkpoints directory (default: ./checkpoints)",
     )
     parser.add_argument("--dry-run", action="store_true", help="Show what would be patched without modifying files")
+    parser.add_argument("--unpatch", action="store_true", help="Restore original files from .orig backups")
     args = parser.parse_args()
 
     print(f"Scanning: {args.checkpoints_dir}")
-    if args.dry_run:
-        print("DRY RUN — no files will be modified\n")
 
     files = find_checkpoint_model_files(args.checkpoints_dir)
     if not files:
@@ -236,29 +305,45 @@ def main():
 
     print(f"Found {len(files)} model file(s):\n")
 
-    total_patched = 0
-    total_skipped = 0
+    if args.unpatch:
+        # ── Unpatch mode: restore originals ──
+        total_restored = 0
+        for f in files:
+            report = unpatch_file(f)
+            model_name = f.parent.name
+            if report["restored"]:
+                total_restored += 1
+                print(f"  [RESTORED] {model_name}/")
+            elif report["error"]:
+                print(f"  [SKIP] {model_name}/ — {report['error']}")
+        print(f"\nSummary: {total_restored} restored, {len(files) - total_restored} skipped")
+    else:
+        # ── Patch mode ──
+        if args.dry_run:
+            print("DRY RUN — no files will be modified\n")
 
-    for f in files:
-        report = apply_patches(f, dry_run=args.dry_run)
-        model_name = f.parent.name
-        status = "MODIFIED" if report["modified"] else "UP TO DATE"
-        print(f"  [{status}] {model_name}/")
+        total_patched = 0
 
-        if report["patches"]:
-            total_patched += 1
-            for p in report["patches"]:
-                print(f"    ✓ {p}")
-        if report["skipped"]:
-            for s in report["skipped"]:
-                print(f"    · {s} (already applied)")
-        if report["errors"]:
-            for e in report["errors"]:
-                print(f"    ⚠ {e}")
-        print()
+        for f in files:
+            report = apply_patches(f, dry_run=args.dry_run)
+            model_name = f.parent.name
+            status = "MODIFIED" if report["modified"] else "UP TO DATE"
+            print(f"  [{status}] {model_name}/")
 
-    total_ok = len(files) - total_patched
-    print(f"Summary: {total_patched} patched, {total_ok} already up-to-date, {len(files)} total")
+            if report["patches"]:
+                total_patched += 1
+                for p in report["patches"]:
+                    print(f"    \u2713 {p}")
+            if report["skipped"]:
+                for s in report["skipped"]:
+                    print(f"    \u00b7 {s} (already applied)")
+            if report["errors"]:
+                for e in report["errors"]:
+                    print(f"    \u26a0 {e}")
+            print()
+
+        total_ok = len(files) - total_patched
+        print(f"Summary: {total_patched} patched, {total_ok} already up-to-date, {len(files)} total")
 
 
 if __name__ == "__main__":
