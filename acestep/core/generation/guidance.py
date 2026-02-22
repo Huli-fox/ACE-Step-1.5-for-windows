@@ -230,6 +230,7 @@ def get_guidance(name: str):
     Raises:
         ValueError if the guidance name is not recognized.
     """
+    name = name.lower()
     if name not in GUIDANCE_MODES:
         valid = ", ".join(sorted(VALID_GUIDANCE))
         raise ValueError(f"Unknown guidance mode '{name}'. Valid modes: {valid}")
