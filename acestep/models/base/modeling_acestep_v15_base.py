@@ -1977,27 +1977,57 @@ class AceStepConditionGenerationModel(AceStepPreTrainedModel):
         if needs_model_fn:
             def _make_model_fn(decoder, do_cfg, attention_mask, encoder_hs, encoder_am,
                                context_lat, guidance_scale, g_fn, cfg_start, cfg_end,
-                               momentum_buf, bsz_val, device_val, dtype_val):
+                               momentum_buf, bsz_val, device_val, dtype_val,
+                               is_pag_mode=False, pag_scale_val=1.0,
+                               pag_start_val=0.0, pag_end_val=1.0):
                 def model_fn(xt_inner, t_val):
-                    x_in = torch.cat([xt_inner, xt_inner], dim=0) if do_cfg else xt_inner
+                    if is_pag_mode and do_cfg:
+                        x_in = torch.cat([xt_inner, xt_inner, xt_inner], dim=0)  # Triple for PAG
+                    elif do_cfg:
+                        x_in = torch.cat([xt_inner, xt_inner], dim=0)
+                    else:
+                        x_in = xt_inner
+
+                    # PAG identity mask for this evaluation
+                    pag_kw = {}
+                    do_pag = is_pag_mode and do_cfg and (pag_start_val <= t_val <= pag_end_val)
+                    if do_pag:
+                        pag_mask = torch.zeros(x_in.shape[0], dtype=torch.bool, device=device_val)
+                        pag_mask[2*bsz_val:] = True
+                        pag_kw['pag_identity_mask'] = pag_mask
+
                     t_tensor = t_val * torch.ones((x_in.shape[0],), device=device_val, dtype=dtype_val)
                     out = decoder(
                         hidden_states=x_in, timestep=t_tensor, timestep_r=t_tensor,
                         attention_mask=attention_mask, encoder_hidden_states=encoder_hs,
                         encoder_attention_mask=encoder_am, context_latents=context_lat,
                         use_cache=False, past_key_values=None,
+                        **pag_kw,
                     )
                     vt_inner = out[0]
                     apply_cfg = t_val >= cfg_start and t_val <= cfg_end
                     if do_cfg:
-                        p_cond, p_uncond = vt_inner.chunk(2)
+                        if is_pag_mode:
+                            p_cond, p_uncond, p_pag = vt_inner.chunk(3)
+                        else:
+                            p_cond, p_uncond = vt_inner.chunk(2)
                         if apply_cfg:
-                            vt_inner = g_fn(
-                                p_cond, p_uncond, guidance_scale,
-                                momentum_buffer=momentum_buf,
-                                disable_momentum=True,
-                                latents=xt_inner, sigma=t_val,
-                            )
+                            if is_pag_mode and do_pag:
+                                from acestep.core.generation.guidance import pag_combined_guidance
+                                vt_inner = pag_combined_guidance(
+                                    p_cond, p_uncond, p_pag,
+                                    guidance_scale, pag_scale_val,
+                                    momentum_buffer=momentum_buf,
+                                    disable_momentum=True,
+                                    latents=xt_inner, sigma=t_val,
+                                )
+                            else:
+                                vt_inner = g_fn(
+                                    p_cond, p_uncond, guidance_scale,
+                                    momentum_buffer=momentum_buf,
+                                    disable_momentum=True,
+                                    latents=xt_inner, sigma=t_val,
+                                )
                         else:
                             vt_inner = p_cond
                     return vt_inner
@@ -2008,6 +2038,8 @@ class AceStepConditionGenerationModel(AceStepPreTrainedModel):
                 encoder_hidden_states, encoder_attention_mask, context_latents,
                 diffusion_guidance_sale, guidance_fn, cfg_interval_start, cfg_interval_end,
                 momentum_buffer, bsz, device, dtype,
+                is_pag_mode=is_pag, pag_scale_val=pag_scale,
+                pag_start_val=pag_start, pag_end_val=pag_end,
             )
 
         solver_state = {}
@@ -2043,6 +2075,8 @@ class AceStepConditionGenerationModel(AceStepPreTrainedModel):
                             encoder_hidden_states, encoder_attention_mask, context_latents,
                             diffusion_guidance_sale, guidance_fn, cfg_interval_start, cfg_interval_end,
                             momentum_buffer, bsz, device, dtype,
+                            is_pag_mode=is_pag, pag_scale_val=pag_scale,
+                            pag_start_val=pag_start, pag_end_val=pag_end,
                         )
 
                 # Main decoder forward pass
