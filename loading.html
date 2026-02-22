@@ -425,40 +425,55 @@
         }, 1000);
 
         // ---- When user changes a dropdown, update .env via Express ----
-        async function updateEnvViaExpress(configPath, lmModelPath) {
-            try {
-                const resp = await fetch('http://localhost:3001/api/models/update-env', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        ACESTEP_CONFIG_PATH: configPath,
-                        ACESTEP_LM_MODEL_PATH: lmModelPath,
-                    }),
-                });
-                if (resp.ok) {
-                    envUpdatedEl.classList.add('show');
-                    setTimeout(() => envUpdatedEl.classList.remove('show'), 3000);
+        let pendingUpdate = null; // track in-flight update promise
+        let updateSucceeded = false;
+
+        async function updateEnvViaExpress(configPath, lmModelPath, retries = 10) {
+            for (let attempt = 1; attempt <= retries; attempt++) {
+                try {
+                    autoContinueEl.textContent = `Saving to .env (attempt ${attempt}/${retries})…`;
+                    const resp = await fetch('http://localhost:3001/api/models/update-env', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            ACESTEP_CONFIG_PATH: configPath,
+                            ACESTEP_LM_MODEL_PATH: lmModelPath,
+                        }),
+                    });
+                    if (resp.ok) {
+                        updateSucceeded = true;
+                        envUpdatedEl.classList.add('show');
+                        setTimeout(() => envUpdatedEl.classList.remove('show'), 4000);
+                        return true;
+                    }
+                } catch (e) {
+                    console.warn(`[Loading] .env update attempt ${attempt}/${retries} failed:`, e.message);
                 }
-            } catch (e) {
-                // Express might not be up yet — retry silently
-                console.warn('Could not update .env (Express not ready):', e.message);
+                // Wait 1 s between retries
+                if (attempt < retries) {
+                    await new Promise(r => setTimeout(r, 1000));
+                }
             }
+            // All retries exhausted
+            autoContinueEl.textContent = '⚠ Could not update .env — Express not ready';
+            autoContinueEl.className = 'auto-continue paused';
+            return false;
         }
 
         function handleDropdownChange() {
-            // Reset timer
+            // Pause auto-continue while we save
             autoContinuePaused = true;
+            updateSucceeded = false;
             updateAutoContinueDisplay();
 
-            // Try to update .env
-            updateEnvViaExpress(modelSelect.value, lmModelSelect.value);
-
-            // Resume timer after a short pause
-            setTimeout(() => {
+            // Start the update (with retries)
+            pendingUpdate = updateEnvViaExpress(modelSelect.value, lmModelSelect.value).then(ok => {
+                pendingUpdate = null;
+                // Resume auto-continue timer regardless of outcome
                 autoContinuePaused = false;
                 autoContinueRemaining = AUTO_CONTINUE_SECONDS;
                 updateAutoContinueDisplay();
-            }, 1500);
+            });
         }
 
         modelSelect.addEventListener('change', handleDropdownChange);
