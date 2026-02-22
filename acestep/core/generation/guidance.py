@@ -160,9 +160,14 @@ def pag_combined_guidance(pred_cond, pred_uncond, pred_pag,
     # Standard APG guidance
     apg_result = _apg_core(pred_cond, pred_uncond, guidance_scale, **ctx)
 
-    # PAG term: guide away from perturbed prediction
+    # PAG term: guide away from perturbed prediction.
+    # Apply perpendicular projection to the PAG diff — same principle as APG:
+    # the parallel component would amplify whatever's already dominant (vocals),
+    # so we keep only the orthogonal component that adds new structural info.
+    from acestep.models.base.apg_guidance import project
     pag_diff = pred_cond - pred_pag
-    return apg_result + pag_scale * pag_diff
+    _parallel, pag_orthogonal = project(pag_diff, pred_cond, dims=[1])
+    return apg_result + pag_scale * pag_orthogonal
 
 
 # ---------------------------------------------------------------------------
