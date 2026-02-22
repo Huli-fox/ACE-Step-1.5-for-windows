@@ -1456,7 +1456,8 @@ class RequestParser:
 def _validate_audio_path(path: Optional[str]) -> Optional[str]:
     """Validate a user-supplied audio file path to prevent path traversal attacks.
 
-    Accepts absolute paths strictly only if they are within the system temporary directory.
+    Accepts absolute paths strictly only if they are within the system temporary directory
+    or the project's audio storage directory.
     Otherwise, rejects absolute paths and paths containing '..' traversal sequences.
 
     Returns the validated, normalized path or None if the input is None/empty.
@@ -1470,19 +1471,28 @@ def _validate_audio_path(path: Optional[str]) -> Optional[str]:
     system_temp = os.path.realpath(tempfile.gettempdir())
     requested_path = os.path.realpath(path)
 
+    # Also allow paths under the project's audio storage directory
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    audio_dir = os.path.realpath(os.path.join(project_root, "ace-step-ui", "public", "audio"))
+
     # SECURE CHECK: Use os.path.commonpath to verify directory boundary integrity.
     # This prevents prefix bypasses (e.g., /tmp_evil when /tmp is allowed).
-    try:
-        is_in_temp = os.path.commonpath([system_temp, requested_path]) == system_temp
-    except ValueError:
-        # Occurs on Windows if paths are on different drives
-        is_in_temp = False
+    allowed_dirs = [system_temp, audio_dir]
+    is_allowed = False
+    for allowed_dir in allowed_dirs:
+        try:
+            if os.path.commonpath([allowed_dir, requested_path]) == allowed_dir:
+                is_allowed = True
+                break
+        except ValueError:
+            # Occurs on Windows if paths are on different drives
+            continue
 
-    if is_in_temp:
-        # Accept server-generated files in temp
+    if is_allowed:
+        # Accept server-generated files in allowed directories
         return requested_path
 
-    # Reject manual absolute paths outside of temp
+    # Reject manual absolute paths outside of allowed directories
     if os.path.isabs(path):
         raise HTTPException(status_code=400, detail="absolute audio file paths are not allowed")
     # Reject path traversal via '..' components
