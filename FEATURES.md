@@ -6,6 +6,34 @@ This document tracks all new features added on top of the upstream [sdbds/ACE-St
 
 ---
 
+## Activation Steering (TADA)
+
+**Branch:** `feature/activation-steering`  
+**Status:** ⚠️ Experimental (In-Progress)  
+
+Total integration of Task Adaptive Directional Activation (TADA), enabling zero-shot generation guidance by modifying model activations directly.  
+> **Note:** This feature is currently in-progress, experimental, and may not yet work as intended.
+
+### What's included
+
+| File | Description |
+|------|-------------|
+| `acestep/compute_steering.py` | Core mathematical script to isolate mathematical delta vectors using contrastive decoding. |
+| `acestep/steering_controller.py` | Handles PyTorch hook injection and logic for applying multiple chained concepts during auto-regressive generation. |
+| `acestep/core/generation/handler/steering_mixin.py` | **[NEW]** Provides high-level handler methods for vector I/O, enabling, and UI configuration mapping. |
+| `ace-step-ui/components/sections/ActivationSteeringSection.tsx` | **[NEW]** UI component for computing contrastive vectors, dynamically overriding base prompts, and applying multi-concept guidance. |
+| `docs/en/Activation_Steering_Tutorial.md` | **[NEW]** Comprehensive guide on use-cases and terminology. |
+
+### How it works
+
+1. It isolates the explicit mathematical "essence" of a concept by decoding a neutral base prompt and then computing the targeted difference against an activated prompt.
+2. The user submits lines of concept modifiers into the **Compute Queue** to generate and cache these arrays on disk as `.pkl` files.
+3. Computed vectors can be hot-loaded directly into the model's memory map across targeted layers (`tf6`, `tf7`).
+4. Scale (alpha) sliders fine-tune the absolute intensity of each loaded concept dynamically, including supporting negative steering constraints. 
+5. Users can selectively unload or permanently **Delete** poor concepts through the UI via the Express backend.
+
+---
+
 ## Advanced Guidance & Solver Modes
 
 **Branch:** `feature/pag-dpmsde-tooltips`  

@@ -167,6 +167,11 @@ class GenerationParams:
     cot_caption: str = ""
     cot_lyrics: str = ""
 
+    # Steering Parameters
+    steering_enabled: bool = False
+    steering_loaded: List[str] = field(default_factory=list)
+    steering_alphas: Dict[str, float] = field(default_factory=dict)
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert config to dictionary for JSON serialization."""
         return asdict(self)
@@ -622,6 +627,9 @@ def generate_music(
             pag_scale=params.pag_scale,
             latent_shift=params.latent_shift,
             latent_rescale=params.latent_rescale,
+            steering_enabled=params.steering_enabled,
+            steering_loaded=params.steering_loaded,
+            steering_alphas=params.steering_alphas,
             progress=progress,
         )
 

@@ -621,6 +621,10 @@ class GenerateMusicRequest(BaseModel):
     lm_repetition_penalty: float = 1.0
     lm_negative_prompt: str = "NO USER INPUT"
 
+    steering_enabled: bool = False
+    steering_loaded: List[str] = Field(default_factory=list)
+    steering_alphas: Dict[str, float] = Field(default_factory=dict)
+
     class Config:
         allow_population_by_field_name = True
         allow_population_by_alias = True
@@ -2171,6 +2175,9 @@ def create_app() -> FastAPI:
                     use_cot_caption=use_cot_caption,  # Use local var (may be auto-disabled)
                     use_cot_language=use_cot_language,  # Use local var (may be auto-disabled)
                     use_constrained_decoding=True,
+                    steering_enabled=req.steering_enabled,
+                    steering_loaded=req.steering_loaded,
+                    steering_alphas=req.steering_alphas,
                 )
 
                 # Build GenerationConfig - default to 2 audios like gradio_ui
@@ -2912,6 +2919,9 @@ def create_app() -> FastAPI:
                 allow_lm_batch=p.bool("allow_lm_batch", True),
                 track_name=p.str("track_name"),
                 track_classes=t_classes,
+                steering_enabled=p.bool("steering_enabled"),
+                steering_loaded=p.get("steering_loaded") or [],
+                steering_alphas=p.get("steering_alphas") or {},
                 **kwargs,
             )
 
@@ -3783,6 +3793,155 @@ def create_app() -> FastAPI:
         media_type = media_types.get(ext, "audio/mpeg")
 
         return FileResponse(resolved_path, media_type=media_type)
+
+    # =========================================================================
+    # Activation Steering Endpoints
+    # =========================================================================
+
+    @app.get("/v1/steering/concepts")
+    async def steering_concepts(_: None = Depends(verify_api_key)):
+        """List available and loaded steering concepts."""
+        handler: AceStepHandler = app.state.handler
+        if handler is None:
+            raise HTTPException(status_code=500, detail="Handler not initialized")
+
+        status = handler.get_steering_status()
+        # Also provide built-in concept names for the UI
+        try:
+            from acestep.compute_steering import BUILTIN_CONCEPTS
+            status["builtin_concepts"] = list(BUILTIN_CONCEPTS.keys())
+        except Exception:
+            status["builtin_concepts"] = []
+        return _wrap_response(status)
+
+    @app.post("/v1/steering/compute")
+    async def steering_compute(request: Request, authorization: Optional[str] = Header(None)):
+        """Compute steering vectors for a concept (long-running, ~15-30 min)."""
+        handler: AceStepHandler = app.state.handler
+        if handler is None or handler.model is None:
+            raise HTTPException(status_code=500, detail="Model not initialized")
+
+        body = await request.json()
+        verify_token_from_request(body, authorization)
+
+        concept = body.get("concept")
+        if not concept:
+            raise HTTPException(status_code=400, detail="concept is required")
+
+        num_steps = int(body.get("num_steps", 30))
+        num_samples = int(body.get("num_samples", 50))
+        seed = int(body.get("seed", 42))
+        positive_template = body.get("positive_template")
+        negative_template = body.get("negative_template")
+        custom_base_prompts = body.get("custom_base_prompts")  # list of strings or None
+
+        result = handler.compute_steering_vectors(
+            concept=concept,
+            num_steps=num_steps,
+            num_samples=num_samples,
+            seed=seed,
+            positive_template=positive_template,
+            negative_template=negative_template,
+            custom_base_prompts=custom_base_prompts,
+        )
+
+        status = handler.get_steering_status()
+        return _wrap_response({**result, **status})
+
+    @app.post("/v1/steering/load")
+    async def steering_load(request: Request, authorization: Optional[str] = Header(None)):
+        """Load a computed steering vector."""
+        handler: AceStepHandler = app.state.handler
+        if handler is None:
+            raise HTTPException(status_code=500, detail="Handler not initialized")
+
+        body = await request.json()
+        verify_token_from_request(body, authorization)
+
+        concept = body.get("concept")
+        if not concept:
+            raise HTTPException(status_code=400, detail="concept is required")
+
+        handler.load_steering_vectors(concept)
+        status = handler.get_steering_status()
+        return _wrap_response({"message": f"Loaded '{concept}'", **status})
+
+    @app.post("/v1/steering/unload")
+    async def steering_unload(request: Request, authorization: Optional[str] = Header(None)):
+        """Unload a steering vector."""
+        handler: AceStepHandler = app.state.handler
+        if handler is None:
+            raise HTTPException(status_code=500, detail="Handler not initialized")
+
+        body = await request.json()
+        verify_token_from_request(body, authorization)
+
+        concept = body.get("concept")
+        if not concept:
+            raise HTTPException(status_code=400, detail="concept is required")
+
+        handler.unload_steering_vectors(concept)
+        status = handler.get_steering_status()
+        return _wrap_response({"message": f"Unloaded '{concept}'", **status})
+
+    @app.delete("/v1/steering/concepts/{concept}")
+    async def steering_delete(concept: str, request: Request, authorization: Optional[str] = Header(None)):
+        """Delete a steering vector from disk and memory."""
+        handler: AceStepHandler = app.state.handler
+        if handler is None:
+            raise HTTPException(status_code=500, detail="Handler not initialized")
+
+        verify_token_from_request({}, authorization)
+
+        if not concept:
+            raise HTTPException(status_code=400, detail="concept is required")
+
+        msg = handler.delete_steering_vectors(concept)
+        status = handler.get_steering_status()
+        return _wrap_response({"message": msg, **status})
+
+    @app.post("/v1/steering/config")
+    async def steering_config(request: Request, authorization: Optional[str] = Header(None)):
+        """Configure steering parameters (alpha, layers, timesteps)."""
+        handler: AceStepHandler = app.state.handler
+        if handler is None:
+            raise HTTPException(status_code=500, detail="Handler not initialized")
+
+        body = await request.json()
+        verify_token_from_request(body, authorization)
+
+        concept = body.get("concept")
+        alpha = body.get("alpha")
+        layers = body.get("layers")
+        timesteps = body.get("timesteps")
+        if concept and concept in getattr(handler, "steering_vectors", {}):
+            cfg = handler.steering_vectors[concept].get("config", {})
+            if alpha is not None:
+                cfg["alpha"] = float(alpha)
+            if layers is not None:
+                cfg["layers"] = layers
+            if timesteps is not None:
+                cfg["timesteps"] = timesteps
+            handler.steering_vectors[concept]["config"] = cfg
+
+        status = handler.get_steering_status()
+        return _wrap_response({"message": "Config updated", **status})
+
+    @app.post("/v1/steering/enable")
+    async def steering_enable(request: Request, authorization: Optional[str] = Header(None)):
+        """Enable or disable activation steering."""
+        handler: AceStepHandler = app.state.handler
+        if handler is None:
+            raise HTTPException(status_code=500, detail="Handler not initialized")
+
+        body = await request.json()
+        verify_token_from_request(body, authorization)
+
+        enabled = body.get("enabled", True)
+        handler.enable_steering(enabled)
+        status = handler.get_steering_status()
+        return _wrap_response({"message": f"Steering {'enabled' if enabled else 'disabled'}", **status})
+
 
     return app
 

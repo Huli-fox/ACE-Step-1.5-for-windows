@@ -65,6 +65,7 @@ from acestep.core.generation.handler import (
     ServiceGenerateRequestMixin,
     ServiceGenerateExecuteMixin,
     ServiceGenerateOutputsMixin,
+    SteeringMixin,
 )
 from acestep.core.generation.handler.lora.advanced_adapter_mixin import AdvancedAdapterMixin
 from acestep.gpu_config import get_gpu_memory_gb, get_global_gpu_config, get_effective_free_vram_gb
@@ -112,6 +113,7 @@ class AceStepHandler(
     ServiceGenerateRequestMixin,
     ServiceGenerateExecuteMixin,
     ServiceGenerateOutputsMixin,
+    SteeringMixin,
 ):
     """ACE-Step Business Logic Handler"""
     
@@ -179,6 +181,11 @@ class AceStepHandler(
         self._next_slot_id = 0
         self._merged_dirty = False
         self.lora_group_scales = {"self_attn": 1.0, "cross_attn": 1.0, "mlp": 1.0}
+
+        # Activation steering (TADA)
+        self.steering_enabled = False
+        self.steering_vectors = {}      # concept_name -> loaded vector dict
+        self.steering_config = {}       # concept_name -> {"alpha": float, "layers": str, "mode": str}
 
         # MLX DiT acceleration (macOS Apple Silicon only)
         self.mlx_decoder = None

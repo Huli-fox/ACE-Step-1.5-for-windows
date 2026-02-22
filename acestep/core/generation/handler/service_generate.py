@@ -135,16 +135,22 @@ class ServiceGenerateMixin:
             pag_end=pag_end,
             pag_scale=pag_scale,
         )
-        outputs, encoder_hidden_states, encoder_attention_mask, context_latents = (
-            self._execute_service_generate_diffusion(
-                payload=payload,
-                generate_kwargs=generate_kwargs,
-                seed_param=seed_param,
-                infer_method=infer_method,
-                shift=shift,
-                audio_cover_strength=audio_cover_strength,
+        try:
+            if getattr(self, "steering_enabled", False):
+                self._apply_steering_hooks()
+            outputs, encoder_hidden_states, encoder_attention_mask, context_latents = (
+                self._execute_service_generate_diffusion(
+                    payload=payload,
+                    generate_kwargs=generate_kwargs,
+                    seed_param=seed_param,
+                    infer_method=infer_method,
+                    shift=shift,
+                    audio_cover_strength=audio_cover_strength,
+                )
             )
-        )
+        finally:
+            if getattr(self, "steering_enabled", False):
+                self._remove_steering_hooks()
         return self._attach_service_generate_outputs(
             outputs=outputs,
             payload=payload,

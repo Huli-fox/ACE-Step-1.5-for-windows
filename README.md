@@ -13,6 +13,11 @@ An enhanced fork of [sdbds/ACE-Step-1.5-for-windows](https://github.com/sdbds/AC
 ### 🧠 Advanced Guidance & Solvers
 Total control over the generation pipeline with 7 unique mathematical guidance modes (APG, ADG, PAG, Plain CFG, CFG++, Dynamic CFG, Rescaled CFG) and 4 ODE solver algorithms (Euler, Heun, DPM++ 2M, RK4). Includes 40+ multilingual educational tooltips explaining every generation parameter.
 
+### 🎯 Activation Steering (TADA)
+> ⚠️ **Experimental Feature:** Currently in-progress and may not work as intended.
+
+Guide generation without expanding prompt length using isolated internal brain state direction vectors. Includes a UI component to compute steering vectors for multiple concepts at once, override base genres, fine-tune strength (alpha) and model layer targets on-the-fly, and remove vectors directly from disk. See the [Activation Steering Tutorial](docs/en/Activation_Steering_Tutorial.md).
+
 ### 🎛️ Advanced Multi-Adapter System
 Load up to **4 LoRA/LoKr adapters simultaneously** with independent per-slot scale sliders and per-module-group scaling (Self-Attn, Cross-Attn, MLP). Uses weight-space merging for zero-hook inference. Per-adapter settings persist across sessions. Includes a built-in **file browser** for scanning and loading `.safetensors` files from a configurable folder.
 
