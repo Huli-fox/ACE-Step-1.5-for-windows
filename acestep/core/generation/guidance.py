@@ -34,93 +34,96 @@ from typing import Any, Dict, Optional, Tuple
 # Guidance functions
 # ---------------------------------------------------------------------------
 
-def plain_cfg(pred_cond, pred_uncond, guidance_scale, **ctx):
-    """Plain Classifier-Free Guidance.
-    
-    The standard CFG formula: uncond + scale * (cond - uncond)
+def _orthogonal_diff(pred_cond, pred_uncond):
+    """Compute the orthogonal (perpendicular) component of the guidance diff.
+
+    This removes the parallel component that would simply amplify the
+    conditional prediction (e.g., making vocals louder). Only the
+    perpendicular component — which steers toward the condition without
+    amplifying dominant features — is returned.
+
+    Uses the same projection math as APG (apg_guidance.py:project).
     """
-    return pred_uncond + guidance_scale * (pred_cond - pred_uncond)
+    from acestep.models.base.apg_guidance import project
+    diff = pred_cond - pred_uncond
+    _parallel, orthogonal = project(diff, pred_cond, dims=[1])
+    return orthogonal
+
+
+def plain_cfg(pred_cond, pred_uncond, guidance_scale, **ctx):
+    """Plain Classifier-Free Guidance (with orthogonal projection).
+
+    Standard CFG direction, but projected perpendicular to pred_cond
+    to prevent amplification of dominant features (vocals).
+    """
+    ortho = _orthogonal_diff(pred_cond, pred_uncond)
+    return pred_cond + (guidance_scale - 1) * ortho
 
 
 def cfg_pp(pred_cond, pred_uncond, guidance_scale, **ctx):
     """CFG++ — Optimized for few-step models.
-    
-    Instead of amplifying the full difference, CFG++ scales the correction
-    by the step size dt, preventing over-correction in few-step regimes.
-    Formula: cond + (scale - 1) * (cond - uncond) * |dt| / t_curr
-    
-    Falls back to plain CFG if dt/t_curr not available.
+
+    Scales the correction by the step size dt, preventing over-correction
+    in few-step regimes. Uses orthogonal projection for balanced guidance.
     """
     dt = ctx.get("dt")
     t_curr = ctx.get("sigma")
-    
+
     # Safely extract float values from tensors if needed
     if isinstance(dt, torch.Tensor): dt = dt.item()
     if isinstance(t_curr, torch.Tensor): t_curr = t_curr.item()
-    
+
+    ortho = _orthogonal_diff(pred_cond, pred_uncond)
+
     if dt is not None and t_curr is not None and t_curr > 1e-6:
-        # Scale correction by step proportion
         step_scale = abs(dt) / t_curr
-        diff = pred_cond - pred_uncond
-        return pred_cond + (guidance_scale - 1) * diff * step_scale
+        return pred_cond + (guidance_scale - 1) * ortho * step_scale
     else:
-        # Fallback to plain CFG
-        return pred_uncond + guidance_scale * (pred_cond - pred_uncond)
+        return pred_cond + (guidance_scale - 1) * ortho
 
 
 def dynamic_cfg(pred_cond, pred_uncond, guidance_scale, **ctx):
     """Dynamic CFG — High guidance early, low guidance later.
-    
+
     Decays the guidance scale across steps using cosine schedule.
-    Early steps (structure) get full guidance, later steps (detail) get less.
-    This produces better structure without over-saturating fine details.
-    
-    Effective scale: guidance_scale * cos(pi/2 * step/total)^power
+    Uses orthogonal projection for balanced guidance.
     """
     step_idx = ctx.get("step_idx", 0)
     total_steps = ctx.get("total_steps", 1)
-    power = 0.5  # Controls decay curve: <1 = slower decay, >1 = faster decay
-    
+    power = 0.5
+
     import math
     progress = step_idx / max(total_steps - 1, 1)
     decay = math.cos(math.pi / 2 * progress) ** power
     effective_scale = 1.0 + (guidance_scale - 1.0) * decay
-    
-    diff = pred_cond - pred_uncond
-    return pred_uncond + effective_scale * diff
+
+    ortho = _orthogonal_diff(pred_cond, pred_uncond)
+    return pred_cond + (effective_scale - 1) * ortho
 
 
 def rescaled_cfg(pred_cond, pred_uncond, guidance_scale, **ctx):
     """Rescaled CFG — Prevents over-saturation at high guidance scales.
-    
-    Applies standard CFG then normalizes the output to match the standard
-    deviation of the conditional prediction. This prevents the "washed out"
-    or "over-saturated" artifacts that occur with high guidance scales.
-    
-    Formula: guided * (std(cond) / std(guided)), blended with phi parameter.
+
+    Applies orthogonal CFG then normalizes the output to match the
+    standard deviation of the conditional prediction.
     """
-    # Determine optimal blend factor (phi) based on scale
-    # Higher scale requires more rescaling to prevent explosion
-    phi = 0.95 if guidance_scale > 4.0 else 0.7 
-    
-    # Standard CFG
-    guided = pred_uncond + guidance_scale * (pred_cond - pred_uncond)
-    
-    # Compute per-sample standard deviations (sequence and feature dims)
+    phi = 0.95 if guidance_scale > 4.0 else 0.7
+
+    ortho = _orthogonal_diff(pred_cond, pred_uncond)
+    guided = pred_cond + (guidance_scale - 1) * ortho
+
+    # Rescale to match conditional std
     std_cond = pred_cond.std(dim=[1, 2], keepdim=True)
     std_guided = guided.std(dim=[1, 2], keepdim=True)
-    
-    # Rescale guided to match conditional std
     factor = std_cond / (std_guided + 1e-5)
     rescaled = guided * factor
-    
-    # Blend between pure CFG and rescaled
+
     return phi * rescaled + (1 - phi) * guided
 
 
 def apg_guidance(pred_cond, pred_uncond, guidance_scale, **ctx):
     """APG — Adaptive Perpendicular Guidance (wrapper).
-    
+
     Projects the guidance direction perpendicular to the conditional prediction,
     with momentum smoothing and norm thresholding.
     """
@@ -131,7 +134,7 @@ def apg_guidance(pred_cond, pred_uncond, guidance_scale, **ctx):
     momentum_buffer = ctx.get("momentum_buffer")
     if ctx.get("disable_momentum", False):
         momentum_buffer = None
-        
+
     return apg_forward(
         pred_cond=pred_cond,
         pred_uncond=pred_uncond,
@@ -143,7 +146,7 @@ def apg_guidance(pred_cond, pred_uncond, guidance_scale, **ctx):
 
 def adg_guidance(pred_cond, pred_uncond, guidance_scale, **ctx):
     """ADG — Angle-based Dynamic Guidance (wrapper).
-    
+
     Uses the angle between conditional and unconditional predictions
     to dynamically adjust guidance strength.
     """
@@ -163,12 +166,12 @@ def adg_guidance(pred_cond, pred_uncond, guidance_scale, **ctx):
 
 
 # PAG is handled separately at the handler level (perturbs attention),
-# so we provide a pass-through wrapper that applies plain CFG.
+# so we provide a pass-through wrapper that applies orthogonal CFG.
 def pag_guidance(pred_cond, pred_uncond, guidance_scale, **ctx):
     """PAG — Perturbed Attention Guidance (pass-through).
-    
+
     PAG's attention perturbation is applied at the handler level.
-    This wrapper applies plain CFG to the resulting predictions.
+    This wrapper applies orthogonal CFG to the resulting predictions.
     """
     return plain_cfg(pred_cond, pred_uncond, guidance_scale, **ctx)
 
