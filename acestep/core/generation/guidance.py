@@ -1,48 +1,35 @@
 """
 Guidance registry for ACE-Step flow matching diffusion.
 
-Each guidance mode combines the conditional and unconditional velocity
-predictions to steer generation. The model produces both predictions
-via CFG batch doubling; the guidance function determines how to combine them.
+IMPORTANT DESIGN NOTE:
+The ACE-Step model was trained and designed to work exclusively with APG
+(Adaptive Perpendicular Guidance) as implemented in apg_guidance.py.
+The vanilla upstream code ONLY uses apg_forward — there is no "plain CFG".
 
-All modes delegate to apg_forward for the actual guidance computation
-(momentum smoothing, norm thresholding, perpendicular projection).
-Modes differ only in the effective guidance scale they pass.
+All guidance modes therefore MUST pass through the full APG pipeline
+(momentum smoothing + norm thresholding + perpendicular projection) to avoid
+producing unbalanced audio (loud vocals, muffled instruments).
+
+Modes differ by applying post-processing or scale adjustments to the
+APG-guided output, NOT by replacing the core formula.
 
 Guidance interface:
     guidance_fn(pred_cond, pred_uncond, guidance_scale, **ctx) -> vt_guided
-
-    - pred_cond:      Conditional velocity prediction [bsz, seq, dim]
-    - pred_uncond:    Unconditional velocity prediction [bsz, seq, dim]
-    - guidance_scale: CFG strength (typically 3-15)
-    - **ctx:          Step context (varies by mode):
-        - momentum_buffer: MomentumBuffer instance (for APG)
-        - latents:         Current xt (for ADG)
-        - sigma:           Current timestep t_curr (for ADG)
-        - dt:              Step size t_curr - t_prev (for CFG++)
-        - step_idx:        Current step index (for Dynamic CFG)
-        - total_steps:     Total inference steps (for Dynamic CFG)
-    Returns: guided velocity prediction [bsz, seq, dim]
-
-To add a new guidance mode:
-    1. Define a function following the interface above
-    2. Register it in the GUIDANCE_MODES dict
-    3. Add metadata to GUIDANCE_INFO
 """
 
+import math
 import torch
-from typing import Any, Dict, Optional, Tuple
 
 
 # ---------------------------------------------------------------------------
-# Shared APG base
+# Core APG wrapper — all modes route through here
 # ---------------------------------------------------------------------------
 
-def _apg_base(pred_cond, pred_uncond, guidance_scale, **ctx):
-    """Core guidance via apg_forward.
+def _apg_core(pred_cond, pred_uncond, guidance_scale, **ctx):
+    """Call apg_forward with proper momentum buffer handling.
 
-    All modes route through here to get the full APG treatment:
-    momentum smoothing, norm thresholding, perpendicular projection.
+    This is the ONLY function that actually computes guidance.
+    All modes call this, then optionally post-process the result.
     """
     from acestep.models.base.apg_guidance import apg_forward
     momentum_buffer = ctx.get("momentum_buffer")
@@ -62,15 +49,18 @@ def _apg_base(pred_cond, pred_uncond, guidance_scale, **ctx):
 # ---------------------------------------------------------------------------
 
 def plain_cfg(pred_cond, pred_uncond, guidance_scale, **ctx):
-    """Plain CFG — Standard guidance strength via APG pipeline."""
-    return _apg_base(pred_cond, pred_uncond, guidance_scale, **ctx)
+    """Standard CFG — direct APG guidance (identical to APG).
+
+    Since the model was trained with APG, "plain CFG" IS APG.
+    """
+    return _apg_core(pred_cond, pred_uncond, guidance_scale, **ctx)
 
 
 def cfg_pp(pred_cond, pred_uncond, guidance_scale, **ctx):
-    """CFG++ — Step-scaled guidance for few-step regimes.
+    """CFG++ — Reduced guidance for large steps.
 
-    Reduces effective guidance proportional to step size,
-    preventing over-correction in few-step schedules.
+    Uses APG with a step-scaled effective guidance to prevent
+    over-correction when step size is large relative to sigma.
     """
     dt = ctx.get("dt")
     t_curr = ctx.get("sigma")
@@ -84,53 +74,64 @@ def cfg_pp(pred_cond, pred_uncond, guidance_scale, **ctx):
     else:
         effective_scale = guidance_scale
 
-    return _apg_base(pred_cond, pred_uncond, effective_scale, **ctx)
+    return _apg_core(pred_cond, pred_uncond, effective_scale, **ctx)
 
 
 def dynamic_cfg(pred_cond, pred_uncond, guidance_scale, **ctx):
-    """Dynamic CFG — Cosine-decaying guidance (strong early, weak late)."""
+    """Dynamic CFG — Cosine-decaying guidance schedule.
+
+    Uses APG with full guidance early (establishing structure) and
+    reduced guidance later (preserving fine detail).
+    """
     step_idx = ctx.get("step_idx", 0)
     total_steps = ctx.get("total_steps", 1)
     power = 0.5
 
-    import math
     progress = step_idx / max(total_steps - 1, 1)
     decay = math.cos(math.pi / 2 * progress) ** power
     effective_scale = 1.0 + (guidance_scale - 1.0) * decay
 
-    return _apg_base(pred_cond, pred_uncond, effective_scale, **ctx)
+    return _apg_core(pred_cond, pred_uncond, effective_scale, **ctx)
 
 
 def rescaled_cfg(pred_cond, pred_uncond, guidance_scale, **ctx):
-    """Rescaled CFG — Std-matched guidance to prevent over-saturation.
+    """Rescaled CFG — Std-matched post-processing.
 
-    Runs APG at the requested scale, then rescales output to match
-    the conditional prediction's standard deviation.
+    Runs APG at the requested scale, then rescales the output to match
+    the conditional prediction's standard deviation, preventing
+    over-saturation from high guidance. Blends rescaled and raw output.
     """
     phi = 0.95 if guidance_scale > 4.0 else 0.7
 
-    guided = _apg_base(pred_cond, pred_uncond, guidance_scale, **ctx)
+    guided = _apg_core(pred_cond, pred_uncond, guidance_scale, **ctx)
 
+    # Post-process: match std of conditional prediction
     std_cond = pred_cond.std(dim=[1, 2], keepdim=True)
     std_guided = guided.std(dim=[1, 2], keepdim=True)
     factor = std_cond / (std_guided + 1e-5)
     rescaled = guided * factor
 
+    # Blend rescaled and raw
     return phi * rescaled + (1 - phi) * guided
 
 
 def apg_guidance(pred_cond, pred_uncond, guidance_scale, **ctx):
-    """APG — Adaptive Perpendicular Guidance (native)."""
-    return _apg_base(pred_cond, pred_uncond, guidance_scale, **ctx)
+    """APG — Adaptive Perpendicular Guidance (native upstream default)."""
+    return _apg_core(pred_cond, pred_uncond, guidance_scale, **ctx)
 
 
 def adg_guidance(pred_cond, pred_uncond, guidance_scale, **ctx):
-    """ADG — Angle-based Dynamic Guidance (wrapper)."""
+    """ADG — Angle-based Dynamic Guidance.
+
+    Uses a completely different algorithm (angle-based) from
+    the apg_guidance module.
+    """
     from acestep.models.base.apg_guidance import adg_forward
     latents = ctx.get("latents")
     sigma = ctx.get("sigma")
     if latents is None or sigma is None:
-        return _apg_base(pred_cond, pred_uncond, guidance_scale, **ctx)
+        # Fallback to APG if missing required context
+        return _apg_core(pred_cond, pred_uncond, guidance_scale, **ctx)
     return adg_forward(
         latents=latents,
         noise_pred_cond=pred_cond,
@@ -141,8 +142,14 @@ def adg_guidance(pred_cond, pred_uncond, guidance_scale, **ctx):
 
 
 def pag_guidance(pred_cond, pred_uncond, guidance_scale, **ctx):
-    """PAG — Perturbed Attention Guidance (attention perturbation at handler level)."""
-    return _apg_base(pred_cond, pred_uncond, guidance_scale, **ctx)
+    """PAG — Perturbed Attention Guidance.
+
+    NOTE: True PAG requires a third forward pass with perturbed
+    self-attention (identity attention maps), which is handled
+    at the handler level. At the guidance level, this applies
+    standard APG to the resulting predictions.
+    """
+    return _apg_core(pred_cond, pred_uncond, guidance_scale, **ctx)
 
 
 # ---------------------------------------------------------------------------
@@ -160,11 +167,11 @@ GUIDANCE_MODES = {
 }
 
 GUIDANCE_INFO = {
-    "cfg":          {"name": "Plain CFG",    "description": "Standard guidance strength"},
-    "cfg_pp":       {"name": "CFG++",        "description": "Step-scaled for few-step models"},
+    "cfg":          {"name": "Plain CFG",    "description": "Standard guidance (= APG)"},
+    "cfg_pp":       {"name": "CFG++",        "description": "Step-scaled guidance for few-step"},
     "dynamic_cfg":  {"name": "Dynamic CFG",  "description": "Cosine-decaying guidance schedule"},
-    "rescaled_cfg": {"name": "Rescaled CFG", "description": "Std-matched to prevent over-saturation"},
-    "apg":          {"name": "APG",          "description": "Perpendicular guidance with momentum"},
+    "rescaled_cfg": {"name": "Rescaled CFG", "description": "Std-matched to prevent saturation"},
+    "apg":          {"name": "APG",          "description": "Adaptive perpendicular guidance"},
     "adg":          {"name": "ADG",          "description": "Angle-based dynamic guidance"},
     "pag":          {"name": "PAG",          "description": "Perturbed attention guidance"},
 }
