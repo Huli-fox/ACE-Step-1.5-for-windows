@@ -1614,6 +1614,7 @@ def create_app() -> FastAPI:
         app.state._llm_init_error = None
         app.state._llm_init_lock = Lock()
         app.state._llm_lazy_load_disabled = False  # Will be set to True if LLM skipped due to GPU config
+        app.state._llm_model_path = ""  # Track which LM model is currently loaded
 
         # Multi-model support: secondary DiT handlers
         handler2 = None
@@ -1881,13 +1882,39 @@ def create_app() -> FastAPI:
                 """Generate music using unified inference logic from acestep.inference"""
 
                 def _ensure_llm_ready() -> None:
-                    """Ensure LLM handler is initialized when needed"""
+                    """Ensure LLM handler is initialized with the requested model.
+
+                    If the LLM is already loaded but with a different model than
+                    requested, unload it and re-initialize with the new model.
+                    """
+                    requested_lm = (req.lm_model_path or os.getenv("ACESTEP_LM_MODEL_PATH") or "acestep-5Hz-lm-0.6B").strip()
+
                     with app.state._llm_init_lock:
                         initialized = getattr(app.state, "_llm_initialized", False)
                         had_error = getattr(app.state, "_llm_init_error", None)
-                        if initialized or had_error is not None:
+                        current_lm = getattr(app.state, "_llm_model_path", "")
+
+                        # If already loaded with the SAME model, nothing to do
+                        if initialized and current_lm == requested_lm:
                             return
-                        print("[API Server] reloading.")
+
+                        # If loaded with a DIFFERENT model, unload first
+                        if initialized and current_lm and current_lm != requested_lm:
+                            print(f"[API Server] LM model switch: {current_lm} → {requested_lm}")
+                            try:
+                                llm.unload()
+                                app.state._llm_initialized = False
+                                app.state._llm_init_error = None
+                                app.state._llm_model_path = ""
+                            except Exception as e:
+                                print(f"[API Server] Warning: Failed to unload LM: {e}")
+                            # Fall through to re-initialize
+
+                        # If already had an error and not switching models, don't retry
+                        if had_error is not None and (not current_lm or current_lm == requested_lm):
+                            return
+
+                        print(f"[API Server] Loading LM model: {requested_lm}")
 
                         # Check if lazy loading is disabled (GPU memory insufficient)
                         if getattr(app.state, "_llm_lazy_load_disabled", False):
@@ -1901,7 +1928,7 @@ def create_app() -> FastAPI:
 
                         project_root = _get_project_root()
                         checkpoint_dir = os.path.join(project_root, "checkpoints")
-                        lm_model_path = (req.lm_model_path or os.getenv("ACESTEP_LM_MODEL_PATH") or "acestep-5Hz-lm-0.6B").strip()
+                        lm_model_path = requested_lm
                         backend = (req.lm_backend or os.getenv("ACESTEP_LM_BACKEND") or "vllm").strip().lower()
                         if backend not in {"vllm", "pt", "mlx"}:
                             backend = "vllm"
@@ -1929,6 +1956,7 @@ def create_app() -> FastAPI:
                             app.state._llm_init_error = status
                         else:
                             app.state._llm_initialized = True
+                            app.state._llm_model_path = lm_model_path
 
                 def _normalize_metas(meta: Dict[str, Any]) -> Dict[str, Any]:
                     """Ensure a stable `metas` dict (keys always present)."""
@@ -2794,6 +2822,7 @@ def create_app() -> FastAPI:
                 )
                 if llm_ok:
                     app.state._llm_initialized = True
+                    app.state._llm_model_path = lm_model_path
                     print(f"[API Server] LLM model loaded: {lm_model_path}")
                 else:
                     app.state._llm_init_error = llm_status
@@ -3259,8 +3288,10 @@ def create_app() -> FastAPI:
         Returns active_model: null until initialization is complete.
         """
         current_model = _get_model_name(app.state._config_path) if getattr(app.state, "_initialized", False) else None
+        current_lm = getattr(app.state, "_llm_model_path", "") or None
         return _wrap_response({
             "active_model": current_model,
+            "lm_model": current_lm,
         })
 
     @app.post("/v1/models/switch")
