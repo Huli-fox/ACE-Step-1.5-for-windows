@@ -329,6 +329,34 @@ Export all generation parameters to a JSON file and import them later to reprodu
 
 ---
 
+## Debug Panel & UI Polish
+
+**Branch:** `feature/debug-panel`  
+**Status:** ✅ Merged
+
+Live system monitoring panel and UI polish improvements: a collapsible debug panel showing GPU VRAM, RAM, and CPU usage alongside a real-time streaming API log, a resizable Create Panel, and a streamlined sidebar toggle.
+
+### What's included
+
+| File | Description |
+|------|-------------|
+| `acestep/api_server.py` | Extended `LogBuffer` with ring buffer + cursor. Added `GET /v1/system/metrics` (GPU, RAM, CPU) and `GET /v1/system/logs` (cursor-based). |
+| `ace-step-ui/server/src/routes/system.ts` | **[NEW]** Express route: metrics proxy + SSE log stream at `/api/system/*`. |
+| `ace-step-ui/server/src/index.ts` | Mounted system routes. |
+| `ace-step-ui/components/DebugPanel.tsx` | **[NEW]** Fixed right-edge panel with progress bars, retro terminal log viewer, persisted state. |
+| `ace-step-ui/App.tsx` | Integrated DebugPanel, content shift on open, resizable CreatePanel with drag handle. |
+| `ace-step-ui/components/Sidebar.tsx` | Replaced logo + separate arrow with a single purple circle toggle (chevron arrow). |
+| `requirements.txt` | Added `psutil>=5.9.0` for CPU/RAM metrics. |
+
+### How it works
+
+1. **Debug Panel:** A toggle tab on the right screen edge opens a 400px panel showing VRAM/RAM/CPU metrics (polled every 2s) and a streaming API log with color-coded levels (green text on black — retro terminal style). Panel state persists across sessions.
+2. **Content Shift:** When the debug panel opens, the entire layout (including Song Details sidebar) smoothly slides left to keep everything visible.
+3. **Resizable Create Panel:** Drag the right edge of the parameters panel to resize it (280–600px). Width persists across sessions. The track list absorbs the change.
+4. **Sidebar Toggle:** The purple circle in the top-left now contains a chevron arrow that rotates to indicate expand/collapse. The separate arrow button has been removed.
+
+---
+
 <!-- 
 ## [Next Feature Name]
 

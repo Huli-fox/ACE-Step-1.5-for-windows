@@ -1517,16 +1517,29 @@ async def _save_upload_to_temp(upload: StarletteUploadFile, *, prefix: str) -> s
     return path
 
 class LogBuffer:
-    def __init__(self):
+    def __init__(self, maxlen: int = 500):
         self.last_message = "Waiting"
+        self._lines: deque = deque(maxlen=maxlen)
+        self._cursor: int = 0
+        self._lock = Lock()
 
     def write(self, message):
         msg = message.strip()
         if msg:
             self.last_message = msg
+            with self._lock:
+                self._lines.append((self._cursor, msg))
+                self._cursor += 1
 
     def flush(self):
         pass
+
+    def get_lines_after(self, after_cursor: int = -1):
+        """Return lines with cursor > after_cursor."""
+        with self._lock:
+            lines = [(c, l) for c, l in self._lines if c > after_cursor]
+            current_cursor = self._cursor
+        return lines, current_cursor
 
 log_buffer = LogBuffer()
 logger.add(lambda msg: log_buffer.write(msg), format="{time:HH:mm:ss} | {level} | {message}")
@@ -3973,6 +3986,64 @@ def create_app() -> FastAPI:
         status = handler.get_steering_status()
         return _wrap_response({"message": f"Steering {'enabled' if enabled else 'disabled'}", **status})
 
+
+    # =========================================================================
+    # System Metrics & Log Endpoints (Debug Panel)
+    # =========================================================================
+
+    @app.get("/v1/system/metrics")
+    async def system_metrics():
+        """Return live system metrics: GPU VRAM, system RAM, CPU."""
+        gpu = {}
+        if torch.cuda.is_available():
+            try:
+                idx = torch.cuda.current_device()
+                free_bytes, total_bytes = torch.cuda.mem_get_info(idx)
+                allocated_bytes = torch.cuda.memory_allocated(idx)
+                reserved_bytes = torch.cuda.memory_reserved(idx)
+                gpu = {
+                    "name": torch.cuda.get_device_name(idx),
+                    "allocated_gb": round(allocated_bytes / (1024**3), 2),
+                    "reserved_gb": round(reserved_bytes / (1024**3), 2),
+                    "free_gb": round(free_bytes / (1024**3), 2),
+                    "total_gb": round(total_bytes / (1024**3), 2),
+                }
+            except Exception:
+                gpu = {"error": "Failed to read GPU metrics"}
+        else:
+            gpu = {"error": "No CUDA device available"}
+
+        ram = {}
+        cpu = {}
+        try:
+            import psutil
+            mem = psutil.virtual_memory()
+            ram = {
+                "used_gb": round(mem.used / (1024**3), 2),
+                "total_gb": round(mem.total / (1024**3), 2),
+                "percent": mem.percent,
+            }
+            cpu = {
+                "percent": psutil.cpu_percent(interval=0),
+                "count": psutil.cpu_count(logical=True),
+            }
+        except ImportError:
+            ram = {"error": "psutil not installed"}
+            cpu = {"error": "psutil not installed"}
+        except Exception as e:
+            ram = {"error": str(e)}
+            cpu = {"error": str(e)}
+
+        return {"gpu": gpu, "ram": ram, "cpu": cpu}
+
+    @app.get("/v1/system/logs")
+    async def system_logs(after: int = -1):
+        """Return log lines after the given cursor for efficient polling."""
+        lines, current_cursor = log_buffer.get_lines_after(after)
+        return {
+            "lines": [line for _, line in lines],
+            "cursor": current_cursor,
+        }
 
     return app
 
