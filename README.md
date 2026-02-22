@@ -43,6 +43,9 @@ Total UX overhaul of the Create panel. Settings are now cleanly grouped into col
 ### ⏻ Simple Shutdown
 Quit button in the sidebar gracefully shuts down all processes (Python API, Vite, Express, and their hosting terminal windows) with a single click.
 
+### 📋 JSON Export & Import
+Export all generation parameters to a shareable `.json` file and import them later to reproduce exact configurations. Includes full adapter slot details, steering concepts, and all expert parameters in the Generation Parameters sidebar.
+
 ---
 
 ## Upstream Features

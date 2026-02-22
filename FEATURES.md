@@ -267,6 +267,36 @@ Total UX reorganization and architectural refactoring of the Create panel to red
 
 ---
 
+## JSON Export & Import
+
+**Branch:** `feature/json-export-import`  
+**Status:** ✅ Merged
+
+Export all generation parameters to a JSON file and import them later to reproduce exact configurations. Includes full adapter and steering parameter persistence in the Generation Parameters sidebar.
+
+### What's included
+
+| File | Description |
+|------|-------------|
+| `ace-step-ui/components/CreatePanel.tsx` | Export/Import buttons below Task Type selector. `handleExportJson` serializes all state to a downloadable `.json` file. `handleImportJson` parses the file and restores all state variables, auto-opening steering/adapter panels if applicable. |
+| `ace-step-ui/App.tsx` | Replaced 65-line cherry-picked parameter allowlist in `handleGenerate` with `{ ...params }` spread — ensures all current and future parameters flow through to the API automatically. |
+| `ace-step-ui/server/src/routes/generate.ts` | Simplified to `const params = req.body as GenerateBody` — stores the entire frontend payload verbatim in the SQLite `params` column. |
+| `ace-step-ui/components/RightSidebar.tsx` | Added adapter slot display (name, type, scale) and steering concept display (concept, alpha) to the Generation Parameters sidebar. Removed redundant "Use ADG" entry (now covered by Guidance Mode). |
+| `ace-step-ui/services/api.ts` | Synced `GenerationParams` interface with adapter and steering fields, updated `inferMethod` type union. |
+| `ace-step-ui/types.ts` | Added `loraLoaded`, adapter, and steering properties to the shared `GenerationParams` interface. |
+
+### How it works
+
+1. **Export:** Click the **Export JSON** button → all generation parameters (including adapter slots, steering concepts, guidance mode, PAG settings, etc.) are serialized and downloaded as a timestamped `.json` file.
+2. **Import:** Click the **Import JSON** button → select a previously exported file → all parameters are restored. If the config included loaded adapters or steering concepts, those panels auto-expand.
+3. **Sidebar Display:** After generation, the right sidebar now shows:
+   - **Basic LoRA** name and scale (only when not using advanced adapters)
+   - **Advanced Adapter Slots** with name, type badge, and scale per slot
+   - **Steering Concepts** with concept name and alpha value
+4. **Future-proof API:** `App.tsx` now spreads params directly, so any new fields added to `CreatePanel` automatically flow through without needing to update the allowlist.
+
+---
+
 <!-- 
 ## [Next Feature Name]
 
