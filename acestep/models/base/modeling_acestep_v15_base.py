@@ -1930,8 +1930,22 @@ class AceStepConditionGenerationModel(AceStepPreTrainedModel):
             )
         else:
             xt = noise
-        
-        # PAG setup
+
+        from acestep.core.generation.solvers import get_solver, VALID_SOLVERS
+        from acestep.core.generation.guidance import get_guidance, VALID_GUIDANCE
+
+        # Map legacy method names to solver names
+        solver_name = {"ode": "euler", "sde": "euler", "dpmsde": "euler"}.get(infer_method, infer_method)
+        solver_fn, needs_model_fn = get_solver(solver_name)
+
+        # Get guidance function
+        _gm = guidance_mode if guidance_mode else "apg"
+        # Legacy: if use_adg was passed via kwargs, map accordingly
+        if kwargs.get("use_adg", False) and _gm == "apg":
+            _gm = "adg"
+        guidance_fn = get_guidance(_gm)
+
+        # PAG setup — must come after _gm is defined
         is_pag = (_gm == 'pag')
         pag_scale = kwargs.get('pag_scale', 1.0)
         pag_start = kwargs.get('pag_start', 0.0)
@@ -1956,20 +1970,6 @@ class AceStepConditionGenerationModel(AceStepPreTrainedModel):
                 # src_latents
                 context_latents = torch.cat([context_latents, context_latents], dim=0)
                 attention_mask = torch.cat([attention_mask, attention_mask], dim=0)
-        
-        from acestep.core.generation.solvers import get_solver, VALID_SOLVERS
-        from acestep.core.generation.guidance import get_guidance, VALID_GUIDANCE
-
-        # Map legacy method names to solver names
-        solver_name = {"ode": "euler", "sde": "euler", "dpmsde": "euler"}.get(infer_method, infer_method)
-        solver_fn, needs_model_fn = get_solver(solver_name)
-
-        # Get guidance function
-        _gm = guidance_mode if guidance_mode else "apg"
-        # Legacy: if use_adg was passed via kwargs, map accordingly
-        if kwargs.get("use_adg", False) and _gm == "apg":
-            _gm = "adg"
-        guidance_fn = get_guidance(_gm)
 
         # Build model_fn callback for multi-evaluation solvers (Heun, RK4)
         # This wraps decoder call + CFG in a single function: model_fn(xt, t) -> vt
