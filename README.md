@@ -21,11 +21,11 @@ Guide generation without expanding prompt length using isolated internal brain s
 ### 🎛️ Advanced Multi-Adapter System
 Load up to **4 LoRA/LoKr adapters simultaneously** with independent per-slot scale sliders and per-module-group scaling (Self-Attn, Cross-Attn, MLP). Uses weight-space merging for zero-hook inference. Per-adapter settings persist across sessions. Includes a built-in **file browser** for scanning and loading `.safetensors` files from a configurable folder.
 
-### 🚀 One-Click Launcher
-Double-click `LAUNCH.bat` → animated loading screen monitors all three services (Python API, Express backend, Vite frontend) and auto-redirects when ready. No manual terminal management required.
+### 🚀 One-Click Launcher with Model Selection
+Double-click `LAUNCH.bat` → an interactive loading screen lets you choose which DiT and LM models to load via dropdowns (auto-populated from your `checkpoints/` folder). Changes are saved to `.env` before the Python API starts. A 5-second auto-continue timer proceeds automatically if you don't interact. All three services (Python API, Express backend, Vite frontend) are monitored and auto-redirect when ready.
 
 ### 🔄 Hot-Swap Model Selector
-Live model switching without restarting the server. The dropdown auto-discovers all installed checkpoints and shows a mismatch banner if the selected model differs from the loaded one.
+Live model switching without restarting the server. The dropdown auto-discovers all installed checkpoints and shows a mismatch banner if the selected model differs from the loaded one. **LM model switching** is also supported — changing the 5Hz LM model in the Create panel triggers an automatic unload/reload cycle.
 
 ### 💾 Persistent Settings
 All generation settings (style, lyrics, BPM, model, adapter paths, scales, inference params) survive page refresh via localStorage. Toggle on/off in Settings.
@@ -117,12 +117,12 @@ Use `sudo pwsh` if you are on Linux without root user.
 
 Double-click **`LAUNCH.bat`** — this will:
 
-1. Open a loading screen in your browser immediately
+1. Open an interactive loading screen with model selection dropdowns
 2. Install UI dependencies if needed
-3. Start the Python API server and UI servers
+3. Start the Express backend, then the Python API server
 4. Auto-redirect to the app once all services are ready
 
-The loading screen shows real-time status for each service (Python API, Express backend, Vite frontend) and redirects automatically when everything is loaded.
+The loading screen auto-populates model dropdowns from your `checkpoints/` folder and lets you change the startup models before the Python API loads them. If you don’t interact, it auto-continues after 5 seconds.
 
 > **Alternative:** `START.bat` does the same thing without the loading screen — it opens three separate command windows and launches the browser directly after a short delay.
 

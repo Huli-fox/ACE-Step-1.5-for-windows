@@ -59,35 +59,67 @@ Total overhaul of the inference backend to support 7 distinct guidance modes and
 
 ---
 
-## One-Click Launcher
+## One-Click Launcher with Model Selection
 
-**Branch:** `feature/launch-system`  
+**Branch:** `feature/model-loading-enhancements`  
 **Status:** ✅ Merged
 
-Single-click launch experience with a loading screen that waits for all services to be ready before opening the UI.
+Single-click launch experience with an interactive loading screen that lets you choose which models to load before the servers start.
 
 ### What's included
 
 | File | Description |
 |------|-------------|
-| `LAUNCH.bat` | One-click launcher — opens loading screen, starts API + UI servers |
+| `LAUNCH.bat` | One-click launcher — scans `checkpoints/` for available models, writes `loading-config.js`, opens loading screen, starts Express first then Python API |
 | `START.bat` | Alternative launcher without loading screen |
-| `loading.html` | Animated loading page with real-time service status checklist |
+| `loading.html` | Animated loading page with model selection dropdowns, 5s auto-continue timer, and real-time service status checklist |
+| `ace-step-ui/server/src/routes/models.ts` | `POST /api/models/update-env` — updates `.env` file on disk when the user changes model selection |
+| `ace-step-ui/server/src/index.ts` | CORS fix to allow `file://` origin (loading screen runs from local file) |
 
 ### How it works
 
-1. `LAUNCH.bat` opens `loading.html` in the browser immediately
-2. Starts the Python API server (`3、run_server.ps1`) and UI servers (`4、run_npmgui.ps1`) in the background
-3. The loading page polls three services:
+1. `LAUNCH.bat` scans `checkpoints/` for all `acestep-v15-*` (DiT) and `acestep-5Hz-lm-*` (LM) models
+2. Writes the model list and current `.env` selections to `loading-config.js`
+3. Opens `loading.html` in the browser — dropdowns are pre-populated and pre-selected
+4. **Model selection:** If the user changes a dropdown, the loading screen calls `POST /api/models/update-env` (Express) to update `.env` on disk before the Python API reads it
+5. **5-second auto-continue timer** — resets if the user interacts with the dropdowns
+6. Express starts **before** the Python API (3s head start), allowing `.env` updates to take effect
+7. The loading page polls three services:
    - **Python API** — `/v1/models/status` (waits for `active_model` to be non-null)
    - **Express backend** — `localhost:3001/health`
    - **Vite frontend** — `localhost:3000`
-4. Auto-redirects to the app once all three are confirmed ready
+8. Auto-redirects to the app once all three are confirmed ready
 
 ### API changes
 
-- Added `GET /v1/models/status` endpoint to `acestep/api_server.py` (no auth required)
+- Added `GET /v1/models/status` endpoint to `acestep/api_server.py` (no auth required, includes `lm_model` field)
+- Added `POST /api/models/update-env` endpoint to Express for loading screen `.env` updates
 - `ace-step-ui/start.bat` checks `ACESTEP_NO_BROWSER` env var to avoid opening a duplicate browser tab
+
+---
+
+## LM Model Hot-Switching
+
+**Branch:** `feature/model-loading-enhancements`  
+**Status:** ✅ Merged
+
+Fixes a bug where changing the Language Model (5Hz LM) in the UI had no effect — the original model loaded at startup was always used regardless of the user's selection. Now supports live switching between LM models during a session.
+
+### What's included
+
+| File | Description |
+|------|-------------|
+| `acestep/api_server.py` | `_ensure_llm_ready()` rewritten to detect model mismatch and hot-switch (unload old → load new). Added `app.state._llm_model_path` tracking. `/v1/models/status` now returns `lm_model`. |
+| `ace-step-ui/server/src/routes/generate.ts` | `lm_model_path` is now always sent to the Python API (previously only sent when `thinking=true`) |
+| `ace-step-ui/components/CreatePanel.tsx` | LM model dropdown syncs to the actually loaded model on initial page load via `/api/models/status` |
+
+### How it works
+
+1. Every generation request now includes the selected `lm_model_path` (regardless of thinking mode)
+2. `_ensure_llm_ready()` compares the requested model against the currently loaded one (`app.state._llm_model_path`)
+3. If they differ, the current LLM is unloaded and re-initialized with the new model (~5–15s blocking operation)
+4. If they match, it's a no-op (instant return)
+5. On initial UI load, `CreatePanel` fetches `/api/models/status` and syncs the LM dropdown to whichever model is actually loaded
 
 ---
 
