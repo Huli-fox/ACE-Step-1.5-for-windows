@@ -1473,7 +1473,7 @@ def _validate_audio_path(path: Optional[str]) -> Optional[str]:
 
     # Also allow paths under the project's audio storage directory
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    audio_dir = os.path.realpath(os.path.join(project_root, "ace-step-ui", "public", "audio"))
+    audio_dir = os.path.realpath(os.path.join(project_root, "ace-step-ui", "server", "public", "audio"))
 
     # SECURE CHECK: Use os.path.commonpath to verify directory boundary integrity.
     # This prevents prefix bypasses (e.g., /tmp_evil when /tmp is allowed).
