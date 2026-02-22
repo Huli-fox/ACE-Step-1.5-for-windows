@@ -497,16 +497,38 @@ class AceStepDiTLayer(GradientCheckpointingLayer):
         # Step 1: Self-attention with adaptive layer norm (AdaLN)
         # Apply adaptive normalization: norm(x) * (1 + scale) + shift
         norm_hidden_states = (self.self_attn_norm(hidden_states) * (1 + scale_msa) + shift_msa).type_as(hidden_states)
-        attn_output, self_attn_weights = self.self_attn(
-            hidden_states=norm_hidden_states,
-            position_embeddings=position_embeddings,
-            attention_mask=attention_mask,
-            position_ids=position_ids,
-            output_attentions=output_attentions,
-            use_cache=False,
-            past_key_value=None,
-            **kwargs,
-        )
+
+        # PAG: for batch items marked by pag_identity_mask, skip self-attention
+        # and use identity (the input itself) instead. This is the "perturbed"
+        # prediction that PAG guides away from.
+        pag_identity_mask = kwargs.get('pag_identity_mask', None)
+        if pag_identity_mask is not None and pag_identity_mask.any():
+            # Run self-attention on ALL items (simpler than subsetting, avoids
+            # RoPE position embedding batch-slicing issues), then overwrite
+            # PAG items' output with identity (the normalized input itself).
+            attn_output, self_attn_weights = self.self_attn(
+                hidden_states=norm_hidden_states,
+                position_embeddings=position_embeddings,
+                attention_mask=attention_mask,
+                position_ids=position_ids,
+                output_attentions=output_attentions,
+                use_cache=False,
+                past_key_value=None,
+                **{k: v for k, v in kwargs.items() if k != 'pag_identity_mask'},
+            )
+            # PAG items: replace attention output with identity (skip attention effect)
+            attn_output[pag_identity_mask] = norm_hidden_states[pag_identity_mask]
+        else:
+            attn_output, self_attn_weights = self.self_attn(
+                hidden_states=norm_hidden_states,
+                position_embeddings=position_embeddings,
+                attention_mask=attention_mask,
+                position_ids=position_ids,
+                output_attentions=output_attentions,
+                use_cache=False,
+                past_key_value=None,
+                **kwargs,
+            )
         # Apply gated residual connection: x = x + attn_output * gate
         hidden_states = (hidden_states + attn_output * gate_msa).type_as(hidden_states)
 
@@ -1459,8 +1481,15 @@ class AceStepDiTModel(AceStepPreTrainedModel):
             if all_cross_attentions is None:
                 all_cross_attentions = ()
 
+        # PAG identity mask support: passed via kwargs
+        pag_identity_mask = flash_attn_kwargs.pop('pag_identity_mask', None)
+
         # Process through transformer layers
         for index_block, layer_module in enumerate(self.layers):
+            # Build kwargs for this layer
+            layer_kwargs = dict(flash_attn_kwargs)
+            if pag_identity_mask is not None:
+                layer_kwargs['pag_identity_mask'] = pag_identity_mask
 
             layer_outputs = layer_module(
                 hidden_states,
@@ -1474,7 +1503,7 @@ class AceStepDiTModel(AceStepPreTrainedModel):
                 cache_position,
                 encoder_hidden_states,
                 self_attn_mask_mapping["encoder_attention_mask"],
-                **flash_attn_kwargs,
+                **layer_kwargs,
             )
             hidden_states = layer_outputs[0]
 
@@ -1902,14 +1931,31 @@ class AceStepConditionGenerationModel(AceStepPreTrainedModel):
         else:
             xt = noise
         
+        # PAG setup
+        is_pag = (_gm == 'pag')
+        pag_scale = kwargs.get('pag_scale', 1.0)
+        pag_start = kwargs.get('pag_start', 0.0)
+        pag_end = kwargs.get('pag_end', 1.0)
+
         # main task condition
         do_cfg_guidance = diffusion_guidance_sale > 1.0
         if do_cfg_guidance:
-            encoder_hidden_states = torch.cat([encoder_hidden_states, self.null_condition_emb.expand_as(encoder_hidden_states)], dim=0)
-            encoder_attention_mask = torch.cat([encoder_attention_mask, encoder_attention_mask], dim=0)
-            # src_latents
-            context_latents = torch.cat([context_latents, context_latents], dim=0)
-            attention_mask = torch.cat([attention_mask, attention_mask], dim=0)
+            if is_pag:
+                # Triple batch: [cond, uncond, pag]
+                encoder_hidden_states = torch.cat([
+                    encoder_hidden_states,
+                    self.null_condition_emb.expand_as(encoder_hidden_states),
+                    encoder_hidden_states,  # PAG uses same conditioning
+                ], dim=0)
+                encoder_attention_mask = torch.cat([encoder_attention_mask] * 3, dim=0)
+                context_latents = torch.cat([context_latents] * 3, dim=0)
+                attention_mask = torch.cat([attention_mask] * 3, dim=0)
+            else:
+                encoder_hidden_states = torch.cat([encoder_hidden_states, self.null_condition_emb.expand_as(encoder_hidden_states)], dim=0)
+                encoder_attention_mask = torch.cat([encoder_attention_mask, encoder_attention_mask], dim=0)
+                # src_latents
+                context_latents = torch.cat([context_latents, context_latents], dim=0)
+                attention_mask = torch.cat([attention_mask, attention_mask], dim=0)
         
         from acestep.core.generation.solvers import get_solver, VALID_SOLVERS
         from acestep.core.generation.guidance import get_guidance, VALID_GUIDANCE
@@ -1972,9 +2018,19 @@ class AceStepConditionGenerationModel(AceStepPreTrainedModel):
                 if step_idx >= cover_steps and not _switched_to_non_cover:
                     _switched_to_non_cover = True
                     if do_cfg_guidance:
-                        encoder_hidden_states_non_cover = torch.cat([encoder_hidden_states_non_cover, self.null_condition_emb.expand_as(encoder_hidden_states_non_cover)], dim=0)
-                        encoder_attention_mask_non_cover = torch.cat([encoder_attention_mask_non_cover, encoder_attention_mask_non_cover], dim=0)
-                        context_latents_non_cover = torch.cat([context_latents_non_cover, context_latents_non_cover], dim=0)
+                        if is_pag:
+                            # Triple batch for PAG: [cond, uncond, pag]
+                            encoder_hidden_states_non_cover = torch.cat([
+                                encoder_hidden_states_non_cover,
+                                self.null_condition_emb.expand_as(encoder_hidden_states_non_cover),
+                                encoder_hidden_states_non_cover,
+                            ], dim=0)
+                            encoder_attention_mask_non_cover = torch.cat([encoder_attention_mask_non_cover] * 3, dim=0)
+                            context_latents_non_cover = torch.cat([context_latents_non_cover] * 3, dim=0)
+                        else:
+                            encoder_hidden_states_non_cover = torch.cat([encoder_hidden_states_non_cover, self.null_condition_emb.expand_as(encoder_hidden_states_non_cover)], dim=0)
+                            encoder_attention_mask_non_cover = torch.cat([encoder_attention_mask_non_cover, encoder_attention_mask_non_cover], dim=0)
+                            context_latents_non_cover = torch.cat([context_latents_non_cover, context_latents_non_cover], dim=0)
 
                     encoder_hidden_states = encoder_hidden_states_non_cover
                     encoder_attention_mask = encoder_attention_mask_non_cover
@@ -1990,7 +2046,22 @@ class AceStepConditionGenerationModel(AceStepPreTrainedModel):
                         )
 
                 # Main decoder forward pass
-                x = torch.cat([xt, xt], dim=0) if do_cfg_guidance else xt
+                if is_pag and do_cfg_guidance:
+                    x = torch.cat([xt, xt, xt], dim=0)  # Triple: [cond, uncond, pag]
+                elif do_cfg_guidance:
+                    x = torch.cat([xt, xt], dim=0)
+                else:
+                    x = xt
+
+                # PAG: create identity mask for the third batch slice
+                pag_kw = {}
+                t_curr_f_for_pag = t_curr.item() if isinstance(t_curr, torch.Tensor) else float(t_curr)
+                do_pag_this_step = is_pag and do_cfg_guidance and (pag_start <= t_curr_f_for_pag <= pag_end)
+                if do_pag_this_step:
+                    pag_mask = torch.zeros(x.shape[0], dtype=torch.bool, device=device)
+                    pag_mask[2*bsz:] = True  # Third slice is PAG
+                    pag_kw['pag_identity_mask'] = pag_mask
+
                 t_curr_tensor = t_curr * torch.ones((x.shape[0],), device=device, dtype=dtype)
                 decoder_outputs = self.decoder(
                     hidden_states=x,
@@ -2000,24 +2071,40 @@ class AceStepConditionGenerationModel(AceStepPreTrainedModel):
                     encoder_hidden_states=encoder_hidden_states,
                     encoder_attention_mask=encoder_attention_mask,
                     context_latents=context_latents,
-                    use_cache=True,
-                    past_key_values=past_key_values,
+                    use_cache=not do_pag_this_step,  # Disable cache when PAG changes batch processing
+                    past_key_values=past_key_values if not do_pag_this_step else None,
+                    **pag_kw,
                 )
 
                 vt = decoder_outputs[0]
-                past_key_values = decoder_outputs[1]
+                if not do_pag_this_step:
+                    past_key_values = decoder_outputs[1]
                 apply_cfg_guidance = t_curr >= cfg_interval_start and t_curr <= cfg_interval_end
                 if do_cfg_guidance:
-                    pred_cond, pred_null_cond = vt.chunk(2)
+                    if is_pag:
+                        pred_cond, pred_null_cond, pred_pag = vt.chunk(3)
+                    else:
+                        pred_cond, pred_null_cond = vt.chunk(2)
                     if apply_cfg_guidance:
                         dt_val = (t_curr - t_prev) if isinstance(t_prev, (int, float)) else float(t_curr - t_prev)
-                        vt = guidance_fn(
-                            pred_cond, pred_null_cond, diffusion_guidance_sale,
-                            momentum_buffer=momentum_buffer,
-                            latents=xt, sigma=t_curr,
-                            dt=dt_val,
-                            step_idx=step_idx, total_steps=infer_steps,
-                        )
+                        if is_pag and do_pag_this_step:
+                            from acestep.core.generation.guidance import pag_combined_guidance
+                            vt = pag_combined_guidance(
+                                pred_cond, pred_null_cond, pred_pag,
+                                diffusion_guidance_sale, pag_scale,
+                                momentum_buffer=momentum_buffer,
+                                latents=xt, sigma=t_curr,
+                                dt=dt_val,
+                                step_idx=step_idx, total_steps=infer_steps,
+                            )
+                        else:
+                            vt = guidance_fn(
+                                pred_cond, pred_null_cond, diffusion_guidance_sale,
+                                momentum_buffer=momentum_buffer,
+                                latents=xt, sigma=t_curr,
+                                dt=dt_val,
+                                step_idx=step_idx, total_steps=infer_steps,
+                            )
                     else:
                         vt = pred_cond
 

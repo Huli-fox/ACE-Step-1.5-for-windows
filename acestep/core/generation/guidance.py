@@ -48,12 +48,6 @@ def _apg_core(pred_cond, pred_uncond, guidance_scale, **ctx):
 # Guidance functions
 # ---------------------------------------------------------------------------
 
-def plain_cfg(pred_cond, pred_uncond, guidance_scale, **ctx):
-    """Standard CFG — direct APG guidance (identical to APG).
-
-    Since the model was trained with APG, "plain CFG" IS APG.
-    """
-    return _apg_core(pred_cond, pred_uncond, guidance_scale, **ctx)
 
 
 def cfg_pp(pred_cond, pred_uncond, guidance_scale, **ctx):
@@ -144,12 +138,31 @@ def adg_guidance(pred_cond, pred_uncond, guidance_scale, **ctx):
 def pag_guidance(pred_cond, pred_uncond, guidance_scale, **ctx):
     """PAG — Perturbed Attention Guidance.
 
-    NOTE: True PAG requires a third forward pass with perturbed
-    self-attention (identity attention maps), which is handled
-    at the handler level. At the guidance level, this applies
-    standard APG to the resulting predictions.
+    True PAG per arXiv:2403.17377.  The main loop runs a triple-batch
+    forward pass [cond, uncond, pag] and calls pag_combined_guidance()
+    with all three predictions.  This function is the registry entry;
+    it is NOT called directly during PAG generation.
     """
+    # Fallback: if called without PAG predictions, just do APG
     return _apg_core(pred_cond, pred_uncond, guidance_scale, **ctx)
+
+
+def pag_combined_guidance(pred_cond, pred_uncond, pred_pag,
+                          guidance_scale, pag_scale, **ctx):
+    """Combined APG + PAG guidance for triple-batch mode.
+
+    Formula:  guided = apg_result + pag_scale * (pred_cond - pred_pag)
+
+    The APG term handles conditional-vs-unconditional guidance.
+    The PAG term adds structural coherence by guiding away from
+    the perturbed-attention prediction.
+    """
+    # Standard APG guidance
+    apg_result = _apg_core(pred_cond, pred_uncond, guidance_scale, **ctx)
+
+    # PAG term: guide away from perturbed prediction
+    pag_diff = pred_cond - pred_pag
+    return apg_result + pag_scale * pag_diff
 
 
 # ---------------------------------------------------------------------------
@@ -157,7 +170,6 @@ def pag_guidance(pred_cond, pred_uncond, guidance_scale, **ctx):
 # ---------------------------------------------------------------------------
 
 GUIDANCE_MODES = {
-    "cfg": plain_cfg,
     "cfg_pp": cfg_pp,
     "dynamic_cfg": dynamic_cfg,
     "rescaled_cfg": rescaled_cfg,
@@ -167,7 +179,6 @@ GUIDANCE_MODES = {
 }
 
 GUIDANCE_INFO = {
-    "cfg":          {"name": "Plain CFG",    "description": "Standard guidance (= APG)"},
     "cfg_pp":       {"name": "CFG++",        "description": "Step-scaled guidance for few-step"},
     "dynamic_cfg":  {"name": "Dynamic CFG",  "description": "Cosine-decaying guidance schedule"},
     "rescaled_cfg": {"name": "Rescaled CFG", "description": "Std-matched to prevent saturation"},
