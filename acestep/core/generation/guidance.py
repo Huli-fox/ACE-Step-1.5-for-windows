@@ -34,26 +34,12 @@ from typing import Any, Dict, Optional, Tuple
 # Guidance functions
 # ---------------------------------------------------------------------------
 
-def _clip_to_norm(guided, cond, max_ratio=3.0):
-    """Fallback safety to prevent catastrophic value explosion in CFG variants."""
-    std_cond = cond.std(dim=[1, 2], keepdim=True)
-    std_guided = guided.std(dim=[1, 2], keepdim=True)
-    
-    # Check if we need to clamp (std_guided > max_ratio * std_cond)
-    # Using 1e-8 to prevent division by zero
-    factor = std_cond * max_ratio / (std_guided + 1e-8)
-    factor = torch.clamp(factor, max=1.0)
-    
-    return guided * factor
-
 def plain_cfg(pred_cond, pred_uncond, guidance_scale, **ctx):
     """Plain Classifier-Free Guidance.
     
     The standard CFG formula: uncond + scale * (cond - uncond)
-    Includes a safety norm clip to prevent explosions at high scales.
     """
-    guided = pred_uncond + guidance_scale * (pred_cond - pred_uncond)
-    return _clip_to_norm(guided, pred_cond, max_ratio=3.0)
+    return pred_uncond + guidance_scale * (pred_cond - pred_uncond)
 
 
 def cfg_pp(pred_cond, pred_uncond, guidance_scale, **ctx):
@@ -76,12 +62,10 @@ def cfg_pp(pred_cond, pred_uncond, guidance_scale, **ctx):
         # Scale correction by step proportion
         step_scale = abs(dt) / t_curr
         diff = pred_cond - pred_uncond
-        guided = pred_cond + (guidance_scale - 1) * diff * step_scale
-        return _clip_to_norm(guided, pred_cond, max_ratio=3.0)
+        return pred_cond + (guidance_scale - 1) * diff * step_scale
     else:
         # Fallback to plain CFG
-        guided = pred_uncond + guidance_scale * (pred_cond - pred_uncond)
-        return _clip_to_norm(guided, pred_cond, max_ratio=3.0)
+        return pred_uncond + guidance_scale * (pred_cond - pred_uncond)
 
 
 def dynamic_cfg(pred_cond, pred_uncond, guidance_scale, **ctx):
@@ -102,11 +86,8 @@ def dynamic_cfg(pred_cond, pred_uncond, guidance_scale, **ctx):
     decay = math.cos(math.pi / 2 * progress) ** power
     effective_scale = 1.0 + (guidance_scale - 1.0) * decay
     
-    effective_scale = 1.0 + (guidance_scale - 1.0) * decay
-    
     diff = pred_cond - pred_uncond
-    guided = pred_uncond + effective_scale * diff
-    return _clip_to_norm(guided, pred_cond, max_ratio=3.0)
+    return pred_uncond + effective_scale * diff
 
 
 def rescaled_cfg(pred_cond, pred_uncond, guidance_scale, **ctx):
@@ -129,10 +110,8 @@ def rescaled_cfg(pred_cond, pred_uncond, guidance_scale, **ctx):
     std_cond = pred_cond.std(dim=[1, 2], keepdim=True)
     std_guided = guided.std(dim=[1, 2], keepdim=True)
     
-    # Rescale to match conditional std, with clamp to prevent extreme blowing up
-    # when std_guided is abnormally small
+    # Rescale guided to match conditional std
     factor = std_cond / (std_guided + 1e-5)
-    factor = torch.clamp(factor, min=0.1, max=10.0)
     rescaled = guided * factor
     
     # Blend between pure CFG and rescaled
