@@ -28,4 +28,3 @@ else {
 }
 
 Write-Output "Start finished"
-Read-Host | Out-Null ;
