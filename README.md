@@ -46,6 +46,9 @@ Quit button in the sidebar gracefully shuts down all processes (Python API, Vite
 ### 📋 JSON Export & Import
 Export all generation parameters to a shareable `.json` file and import them later to reproduce exact configurations. Includes full adapter slot details, steering concepts, and all expert parameters in the Generation Parameters sidebar.
 
+### 🎼 Stem Extraction (Extract Mode)
+Isolate individual stems from any audio file using ACE-Step's generative extract task. Select multiple tracks (Vocals, Bass, Guitar, Drums, etc.) and each queues a separate job. Three quality presets (Low/Medium/High) configure optimal solver and step combinations. Optional **Style Hint** guides timbre (e.g., "distorted electric guitar") and **Lyrics Guidance** improves vocal extraction accuracy. Stale metadata is automatically cleared to prevent interference.
+
 ---
 
 ## Upstream Features

@@ -357,6 +357,42 @@ Live system monitoring panel and UI polish improvements: a collapsible debug pan
 
 ---
 
+## Stem Extraction (Extract Mode)
+
+**Branch:** `feature/extract-task`  
+**Status:** ✅ Merged
+
+Full stem extraction workflow using ACE-Step's generative extract task. Select one or more instrument stems to isolate from a source audio file — each creates a separate queued job. Includes quality presets, style hints, and lyrics guidance for vocal tracks.
+
+### What's included
+
+| File | Description |
+|------|-------------|
+| `ace-step-ui/components/sections/ExtractTrackSelector.tsx` | Multi-select toggle chip UI for choosing stems (12 track types) |
+| `ace-step-ui/components/CreatePanel.tsx` | Extract mode flow: quality presets, style hint, lyrics guidance, meta clearing, handleGenerate loop for multi-track jobs |
+| `ace-step-ui/server/src/routes/generate.ts` | Passes `src_audio_path`, `reference_audio_path`, `track_name` to Python backend |
+| `ace-step-ui/server/src/routes/referenceTrack.ts` | Extended upload whitelist for `.ogg`, `.opus`, `.webm` formats |
+| `acestep/api_server.py` | Whitelisted project audio directory in `_validate_audio_path` |
+| `acestep/core/generation/handler/io_audio.py` | Replaced `torchaudio.load` with `soundfile.read` for Windows compatibility |
+| `ace-step-ui/i18n/translations.ts` | 20+ localized keys for extract UI (en, zh, ja, ko) |
+
+### How it works
+
+1. **Track Selection:** Toggle one or more stems from 12 available track types (Vocals, Backing Vocals, Drums, Bass, Guitar, Keyboard, Strings, Synth, Brass, Woodwinds, Percussion, FX). Each selected track queues a separate extraction job.
+2. **Quality Presets:** Three one-click presets configure inference steps, solver, and guidance mode:
+   - ⚡ **Low (Quick):** 20 steps, Euler, Dynamic CFG
+   - ⚖️ **Medium:** 50 steps, Heun, Dynamic CFG
+   - 💎 **High (Slow):** 200 steps, RK4, Dynamic CFG
+3. **Style Hint (Optional):** A text field to describe the expected timbre/genre (e.g., "distorted electric guitar, heavy rock") — passed as the `style` parameter to guide generation quality.
+4. **Lyrics Guidance (Optional):** For vocal/backing vocal tracks, paste lyrics to improve extraction accuracy. The `instrumental` flag is automatically set to `false` for vocal tracks.
+5. **Meta Clearing:** BPM, key, and time signature are zeroed for extract mode so stale values from previous text2music sessions don't interfere — the model relies on the actual source audio.
+6. **Title Format:** Extract jobs are titled `"Vocals - My Song.mp3"` instead of generic names, using the source audio filename.
+7. **Windows Fix:** Replaced `torchaudio.load` with `soundfile.read` in the audio processing pipeline, resolving `torchcodec` dependency failures on Windows.
+
+> **Note:** ACE-Step's extract is *generative*, not subtractive. Unlike traditional source separation tools (Demucs, BSRNN), the model re-generates what it thinks each stem sounds like based on the source audio and instruction. This means vocal tracks may occasionally hallucinate audio in silent sections.
+
+---
+
 <!-- 
 ## [Next Feature Name]
 
@@ -371,4 +407,3 @@ Brief description.
 ### How it works
 - ...
 -->
-
