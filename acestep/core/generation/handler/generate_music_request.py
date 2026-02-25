@@ -3,6 +3,7 @@
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import torch
+import torchaudio
 from loguru import logger
 
 from acestep.constants import TASK_INSTRUCTIONS
@@ -138,8 +139,6 @@ class GenerateMusicRequestMixin:
                 # Uses phase vocoder: STFT → phase_vocoder → iSTFT
                 # This changes speed without affecting pitch (unlike torchaudio.functional.speed
                 # which just resamples and shifts both tempo AND pitch together)
-                import torch
-                import torchaudio
                 if tempo_scale != 1.0:
                     original_len = processed_src_audio.shape[-1]
                     n_fft = 2048
