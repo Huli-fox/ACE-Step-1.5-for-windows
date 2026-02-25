@@ -138,9 +138,9 @@ class GenerateMusicRequestMixin:
                 # Uses phase vocoder: STFT → phase_vocoder → iSTFT
                 # This changes speed without affecting pitch (unlike torchaudio.functional.speed
                 # which just resamples and shifts both tempo AND pitch together)
+                import torch
+                import torchaudio
                 if tempo_scale != 1.0:
-                    import torchaudio
-                    import torch
                     original_len = processed_src_audio.shape[-1]
                     n_fft = 2048
                     hop_length = n_fft // 4
@@ -174,7 +174,6 @@ class GenerateMusicRequestMixin:
                     )
                 # Apply pitch shift (speed-preserving key change) if requested
                 if pitch_shift != 0:
-                    import torchaudio
                     processed_src_audio = torchaudio.functional.pitch_shift(
                         processed_src_audio, sample_rate=48000, n_steps=pitch_shift
                     )
