@@ -6,6 +6,37 @@ This document tracks all new features added on top of the upstream [sdbds/ACE-St
 
 ---
 
+## Tempo Scale & Pitch Shift (Cover Mode)
+
+**Branch:** `qinglong`  
+**Status:** ✅ Merged
+
+Pre-process source audio before VAE encoding with pitch-preserving tempo changes and speed-preserving pitch shifts. Enables changing the tempo of a cover independently from its key, or transposing a male vocal track into a female range (or vice versa) before generation.
+
+### What's included
+
+| File | Description |
+|------|-------------|
+| `acestep/core/generation/handler/generate_music_request.py` | Time-stretch via `torchaudio.functional.speed()` and pitch shift via `torchaudio.functional.pitch_shift()`, applied after `process_src_audio()` and before padding/VAE encoding |
+| `acestep/core/generation/handler/generate_music.py` | `tempo_scale` and `pitch_shift` params threaded through `generate_music()` |
+| `acestep/inference.py` | Added to `GenerationParams` dataclass |
+| `acestep/api_server.py` | Alias mapping, request model, REST and Gradio handlers |
+| `ace-step-ui/server/src/routes/generate.ts` | `GenerateBody` type + request body (gated to cover/repaint/a2a tasks) |
+| `ace-step-ui/components/CreatePanel.tsx` | State variables, prop passing, generate request inclusion |
+| `ace-step-ui/components/sections/CoverRepaintSettings.tsx` | Side-by-side Tempo Scale (0.5x–2.0x) and Pitch Shift (-12 to +12 semitones) sliders |
+| `ace-step-ui/i18n/translations.ts` | Labels, help text, and tooltips for both controls |
+
+### How it works
+
+1. Both sliders appear in the **Cover Settings** section (hidden for text2music/extract modes)
+2. **Tempo Scale** (0.5x–2.0x): Uses phase vocoder to change speed without affecting pitch. 1.3x = 30% faster output, 0.8x = 20% slower
+3. **Pitch Shift** (-12 to +12 semitones): Transposes the source audio without changing speed. +4 shifts up ~a major third (e.g. male→female vocal range), -3 shifts down a minor third
+4. Both transforms are applied to the source audio tensor *before* it enters the padding and VAE encoding pipeline, so the model generates in the new tempo/key space
+5. The two can be combined — e.g. speed up 1.2x AND shift up 3 semitones simultaneously
+6. Display format: Tempo shows as `1.30x`, Pitch shows as `+3 ♯` / `-2 ♭`
+
+---
+
 ## Activation Steering (TADA)
 
 **Branch:** `feature/activation-steering`  
