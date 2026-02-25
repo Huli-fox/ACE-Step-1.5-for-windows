@@ -381,6 +381,8 @@ PARAM_ALIASES = {
 
     "audio_cover_strength": ["audio_cover_strength", "audioCoverStrength"],
     "cover_noise_strength": ["cover_noise_strength", "coverNoiseStrength"],
+    "tempo_scale": ["tempo_scale", "tempoScale"],
+    "pitch_shift": ["pitch_shift", "pitchShift"],
     "enable_normalization": ["enable_normalization", "enableNormalization"],
     "normalization_db": ["normalization_db", "normalizationDb"],
     "latent_shift": ["latent_shift", "latentShift"],
@@ -578,6 +580,8 @@ class GenerateMusicRequest(BaseModel):
     instruction: str = DEFAULT_DIT_INSTRUCTION
     audio_cover_strength: float = 1.0
     cover_noise_strength: float = 0.0
+    tempo_scale: float = 1.0
+    pitch_shift: int = 0
     task_type: str = "text2music"
     analysis_only: bool = False
     full_analysis_only: bool = False
@@ -2232,6 +2236,8 @@ def create_app() -> FastAPI:
                     repainting_end=req.repainting_end if req.repainting_end else -1,
                     audio_cover_strength=req.audio_cover_strength,
                     cover_noise_strength=req.cover_noise_strength,
+                    tempo_scale=req.tempo_scale,
+                    pitch_shift=req.pitch_shift,
                     enable_normalization=req.enable_normalization,
                     normalization_db=req.normalization_db,
                     latent_shift=req.latent_shift,
@@ -2967,6 +2973,8 @@ def create_app() -> FastAPI:
                 instruction=p.str("instruction", DEFAULT_DIT_INSTRUCTION),
                 audio_cover_strength=p.float("audio_cover_strength", 1.0),
                 cover_noise_strength=p.float("cover_noise_strength", 0.0),
+                tempo_scale=p.float("tempo_scale", 1.0),
+                pitch_shift=p.int("pitch_shift", 0),
                 enable_normalization=p.bool("enable_normalization", True),
                 normalization_db=p.float("normalization_db", -1.0),
                 latent_shift=p.float("latent_shift", 0.0),
