@@ -135,16 +135,42 @@ class GenerateMusicRequestMixin:
                         "error": "Invalid source audio",
                     }
                 # Apply tempo scaling (pitch-preserving time-stretch) if requested
+                # Uses phase vocoder: STFT → phase_vocoder → iSTFT
+                # This changes speed without affecting pitch (unlike torchaudio.functional.speed
+                # which just resamples and shifts both tempo AND pitch together)
                 if tempo_scale != 1.0:
                     import torchaudio
+                    import torch
                     original_len = processed_src_audio.shape[-1]
-                    processed_src_audio, _ = torchaudio.functional.speed(
-                        processed_src_audio, orig_freq=48000, factor=tempo_scale
+                    n_fft = 2048
+                    hop_length = n_fft // 4
+                    win_length = n_fft
+                    window = torch.hann_window(win_length, device=processed_src_audio.device)
+                    # STFT
+                    spec = torch.stft(
+                        processed_src_audio, n_fft=n_fft, hop_length=hop_length,
+                        win_length=win_length, window=window, return_complex=True
                     )
+                    # Phase vocoder time-stretch (rate > 1 = faster, rate < 1 = slower)
+                    phase_advance = torch.linspace(
+                        0, torch.pi * hop_length, spec.shape[-2],
+                        device=spec.device, dtype=spec.dtype if spec.is_complex() else torch.float32
+                    )[..., None]
+                    spec_stretched = torchaudio.functional.phase_vocoder(
+                        spec, rate=tempo_scale, phase_advance=phase_advance
+                    )
+                    # iSTFT back to waveform
+                    processed_src_audio = torch.istft(
+                        spec_stretched, n_fft=n_fft, hop_length=hop_length,
+                        win_length=win_length, window=window
+                    )
+                    # Ensure shape matches expected dims (add back batch dim if needed)
+                    if processed_src_audio.dim() == 1:
+                        processed_src_audio = processed_src_audio.unsqueeze(0)
                     new_len = processed_src_audio.shape[-1]
                     logger.info(
                         f"[generate_music] Tempo scaled by {tempo_scale}x "
-                        f"({original_len / 48000:.1f}s → {new_len / 48000:.1f}s)"
+                        f"({original_len / 48000:.1f}s → {new_len / 48000:.1f}s) [phase vocoder]"
                     )
                 # Apply pitch shift (speed-preserving key change) if requested
                 if pitch_shift != 0:
