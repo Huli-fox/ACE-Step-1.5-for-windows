@@ -14,8 +14,31 @@ import os
 import uuid
 import numpy as np
 import soundfile as sf
+from contextlib import contextmanager
 from typing import Dict, Optional, Tuple, Any
 from scipy import signal
+
+
+# ---------------------------------------------------------------------------
+# BFloat16 workaround (same fix as stem_service.py)
+# ACE-Step sets torch default dtype to bfloat16 for GPU inference.
+# audio_separator's Demucs creates internal tensors that inherit that dtype,
+# causing MKL FFT crash on Windows.
+# ---------------------------------------------------------------------------
+
+@contextmanager
+def _float32_default_dtype():
+    """Temporarily force torch default dtype to float32."""
+    try:
+        import torch
+        prev = torch.get_default_dtype()
+        torch.set_default_dtype(torch.float32)
+        try:
+            yield
+        finally:
+            torch.set_default_dtype(prev)
+    except ImportError:
+        yield
 
 # Optional: pedalboard for higher-quality DSP
 try:
@@ -480,9 +503,10 @@ class AudioEnhancer:
                 if self._demucs_model is None or self._demucs_model_name != model_name:
                     logger.info(f"Loading audio_separator with Demucs model: {model_name}")
                     from audio_separator.separator import Separator
-                    self._demucs_model = Separator()
-                    model_filename = f"{model_name}.yaml"
-                    self._demucs_model.load_model(model_filename=model_filename)
+                    with _float32_default_dtype():
+                        self._demucs_model = Separator()
+                        model_filename = f"{model_name}.yaml"
+                        self._demucs_model.load_model(model_filename=model_filename)
                     self._demucs_model_name = model_name
                 return self._demucs_model
             else:
@@ -709,8 +733,9 @@ class AudioEnhancer:
             # Configure output directory
             separator.output_dir = tmp_dir
 
-            # Run separation
-            stem_files = separator.separate(src_path)
+            # Run separation (wrapped in float32 to avoid BFloat16 MKL crash)
+            with _float32_default_dtype():
+                stem_files = separator.separate(src_path)
             logger.info(f"audio_separator produced {len(stem_files)} stem files: {stem_files}")
 
             report(0.35, "Reading separated stems…")
