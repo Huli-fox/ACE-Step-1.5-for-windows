@@ -798,11 +798,34 @@ class AudioEnhancer:
 
                 logger.info(f"  → Mapped to stem: '{matched_name}'")
 
-                stem_audio, _ = sf.read(stem_path, dtype='float32')
+                stem_audio, stem_sr = sf.read(stem_path, dtype='float32')
                 if stem_audio.ndim == 1:
                     stem_audio = stem_audio.reshape(1, -1)
                 else:
                     stem_audio = stem_audio.T  # [samples, channels] → [channels, samples]
+
+                # Resample if stem SR differs from source (e.g. Demucs 44.1kHz vs ACE-Step 48kHz)
+                if stem_sr != sample_rate:
+                    logger.info(f"  Resampling stem '{matched_name}' from {stem_sr}Hz → {sample_rate}Hz")
+                    if LIBROSA_AVAILABLE:
+                        resampled_channels = []
+                        for ch in range(stem_audio.shape[0]):
+                            resampled_channels.append(
+                                librosa.resample(stem_audio[ch], orig_sr=stem_sr, target_sr=sample_rate)
+                            )
+                        stem_audio = np.stack(resampled_channels)
+                    else:
+                        # Fallback: simple linear interpolation
+                        ratio = sample_rate / stem_sr
+                        new_len = int(stem_audio.shape[1] * ratio)
+                        from scipy.interpolate import interp1d
+                        x_old = np.linspace(0, 1, stem_audio.shape[1])
+                        x_new = np.linspace(0, 1, new_len)
+                        resampled_channels = []
+                        for ch in range(stem_audio.shape[0]):
+                            f = interp1d(x_old, stem_audio[ch], kind='linear')
+                            resampled_channels.append(f(x_new))
+                        stem_audio = np.stack(resampled_channels)
 
                 # Accumulate if multiple files map to same stem name (e.g. guitar+piano → other)
                 if matched_name in stems:
