@@ -153,7 +153,7 @@ class GenerateMusicRequestMixin:
                     # Phase vocoder time-stretch (rate > 1 = faster, rate < 1 = slower)
                     phase_advance = torch.linspace(
                         0, torch.pi * hop_length, spec.shape[-2],
-                        device=spec.device, dtype=spec.dtype if spec.is_complex() else torch.float32
+                        device=spec.device, dtype=torch.float32
                     )[..., None]
                     spec_stretched = torchaudio.functional.phase_vocoder(
                         spec, rate=tempo_scale, phase_advance=phase_advance
