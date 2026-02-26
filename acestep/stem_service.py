@@ -13,13 +13,56 @@ Two-pass pipeline (default, best quality):
 from __future__ import annotations
 
 import os
+import sys
 import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
 from uuid import uuid4
 
 from loguru import logger
+
+
+# ---------------------------------------------------------------------------
+# BFloat16 workaround for Windows MKL FFT
+# ---------------------------------------------------------------------------
+
+@contextmanager
+def _force_float32_load():
+    """Temporarily patch torch.load to cast bfloat16 tensors to float32.
+
+    Windows MKL FFT doesn't support bfloat16, so BS-RoFormer checkpoints
+    (saved in bfloat16) crash during model creation.  This context manager
+    intercepts torch.load and converts any bfloat16 tensors to float32.
+    """
+    if sys.platform != "win32":
+        yield
+        return
+
+    import torch
+
+    _original_load = torch.load
+
+    def _patched_load(*args, **kwargs):
+        result = _original_load(*args, **kwargs)
+        return _convert_bf16(result)
+
+    def _convert_bf16(obj):
+        if isinstance(obj, torch.Tensor) and obj.dtype == torch.bfloat16:
+            return obj.float()
+        if isinstance(obj, dict):
+            return {k: _convert_bf16(v) for k, v in obj.items()}
+        if isinstance(obj, (list, tuple)):
+            converted = [_convert_bf16(v) for v in obj]
+            return type(obj)(converted)
+        return obj
+
+    torch.load = _patched_load
+    try:
+        yield
+    finally:
+        torch.load = _original_load
 
 
 # ---------------------------------------------------------------------------
@@ -186,7 +229,8 @@ class StemService:
 
         sep.output_dir = str(output_dir)
         sep.output_format = "flac"
-        sep.load_model(model_filename=self.ROFORMER_MODEL)
+        with _force_float32_load():
+            sep.load_model(model_filename=self.ROFORMER_MODEL)
 
         if cb:
             cb("Separating vocals…", 0.3)
@@ -280,7 +324,8 @@ class StemService:
 
         sep.output_dir = str(output_dir)
         sep.output_format = "flac"
-        sep.load_model(model_filename=self.ROFORMER_MODEL)
+        with _force_float32_load():
+            sep.load_model(model_filename=self.ROFORMER_MODEL)
 
         if cb:
             cb("Pass 1/2: Separating…", 0.15)
