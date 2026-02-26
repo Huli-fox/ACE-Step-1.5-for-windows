@@ -8,16 +8,38 @@ which has a known build issue with its diffq-fixed dependency on
 Windows + Python 3.13+.
 """
 
+import shutil
 import subprocess
 import sys
 
 
+def _find_uv() -> str:
+    """Find the uv executable (may be in ~/.local/bin or on PATH)."""
+    # Check PATH first
+    uv = shutil.which("uv")
+    if uv:
+        return uv
+    # Common install locations
+    import pathlib
+    for candidate in [
+        pathlib.Path.home() / ".local" / "bin" / "uv",
+        pathlib.Path.home() / ".local" / "bin" / "uv.exe",
+    ]:
+        if candidate.exists():
+            return str(candidate)
+    # Fallback: assume it's on PATH
+    return "uv"
+
+
+UV = _find_uv()
+
+
 def _pip(*args: str, check: bool = True) -> int:
-    cmd = [sys.executable, "-m", "pip", *args]
+    cmd = [UV, "pip", *args]
     print(f"  > {' '.join(cmd)}")
     result = subprocess.run(cmd, capture_output=False)
     if check and result.returncode != 0:
-        raise RuntimeError(f"pip command failed: {' '.join(args)}")
+        raise RuntimeError(f"uv pip command failed: {' '.join(args)}")
     return result.returncode
 
 
@@ -64,7 +86,7 @@ def main():
         print("  ✗ All strategies failed!")
         print()
         print("  You can try installing manually:")
-        print("    pip install audio-separator>=0.30.0")
+        print("    uv pip install audio-separator>=0.30.0")
         print()
         sys.exit(1)
 

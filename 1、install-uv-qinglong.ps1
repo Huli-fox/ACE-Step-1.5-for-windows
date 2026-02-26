@@ -117,6 +117,10 @@ else {
     Check "Install main requirements failed"
 }
 
+# Install audio-separator for stem splitting (has known diffq build issue, uses fallback script)
+Write-Output "`nInstalling audio-separator for stem splitting..."
+python install_audio_separator.py
+
 # ============= Step 1: Select DiT Model | 第一步：选择 DiT 模型 =====================
 Write-Output "`n=== DiT 模型下载 / DiT Model Download ==="
 $dit_choice = Read-Host "请选择要下载的 DiT 模型 [1/2/3/4/5/6/a/n] (默认为 n)
