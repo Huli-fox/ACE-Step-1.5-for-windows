@@ -16,6 +16,7 @@ import os
 import sys
 import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
 from uuid import uuid4
@@ -24,65 +25,28 @@ from loguru import logger
 
 
 # ---------------------------------------------------------------------------
-# BFloat16 workaround for Windows MKL FFT  (PyTorch < 2.10)
+# BFloat16 workaround: ACE-Step sets torch default dtype to bfloat16
+# for GPU inference.  BSRoformer.__init__ calls torch.stft(torch.randn(...))
+# which inherits that dtype, and MKL FFT can't handle bfloat16 on Windows.
+# Fix: temporarily restore float32 default during model load.
 # ---------------------------------------------------------------------------
 
-def _ensure_checkpoint_float32(model_dir: str, model_filename: str) -> None:
-    """Convert bfloat16 tensors to float32 in a checkpoint file on disk.
+@contextmanager
+def _float32_default_dtype():
+    """Temporarily force torch default dtype to float32.
 
-    Windows MKL FFT doesn't support bfloat16, so BS-RoFormer checkpoints
-    (saved in bfloat16) crash during model creation.  This function converts
-    the checkpoint once on disk, so audio_separator loads it in float32
-    natively — no monkey-patching needed.
-
-    Only runs on Windows and only if bfloat16 tensors are detected.
+    ACE-Step's init_service_orchestrator sets the default dtype to bfloat16.
+    BSRoformer's constructor calls torch.stft(torch.randn(1, 4096), ...)
+    which creates a bfloat16 tensor — MKL FFT crashes on it (Windows only,
+    fixed in PyTorch >= 2.10).
     """
-    if sys.platform != "win32":
-        return
-
-    ckpt_path = Path(model_dir) / model_filename
-    if not ckpt_path.exists():
-        return  # Not yet downloaded; audio_separator will download it
-
     import torch
-
-    logger.info(f"[StemService] Checking checkpoint dtype: {ckpt_path}")
-    state = torch.load(str(ckpt_path), map_location="cpu", weights_only=False)
-
-    # Walk the state dict and detect bfloat16
-    has_bf16 = False
-    if isinstance(state, dict):
-        for k, v in state.items():
-            if isinstance(v, torch.Tensor) and v.dtype == torch.bfloat16:
-                has_bf16 = True
-                break
-            # Handle nested dicts (e.g. {"state_dict": {...}})
-            if isinstance(v, dict):
-                for kk, vv in v.items():
-                    if isinstance(vv, torch.Tensor) and vv.dtype == torch.bfloat16:
-                        has_bf16 = True
-                        break
-                if has_bf16:
-                    break
-
-    if not has_bf16:
-        logger.info("[StemService] Checkpoint is already float32 — no conversion needed")
-        return
-
-    logger.info("[StemService] Converting checkpoint from bfloat16 → float32…")
-
-    def _convert(obj):
-        if isinstance(obj, torch.Tensor) and obj.dtype == torch.bfloat16:
-            return obj.float()
-        if isinstance(obj, dict):
-            return {k: _convert(v) for k, v in obj.items()}
-        if isinstance(obj, (list, tuple)):
-            return type(obj)(_convert(v) for v in obj)
-        return obj
-
-    state = _convert(state)
-    torch.save(state, str(ckpt_path))
-    logger.info("[StemService] Checkpoint converted and saved ✓")
+    prev = torch.get_default_dtype()
+    torch.set_default_dtype(torch.float32)
+    try:
+        yield
+    finally:
+        torch.set_default_dtype(prev)
 
 
 # ---------------------------------------------------------------------------
@@ -249,8 +213,8 @@ class StemService:
 
         sep.output_dir = str(output_dir)
         sep.output_format = "flac"
-        _ensure_checkpoint_float32("/tmp/audio-separator-models/", self.ROFORMER_MODEL)
-        sep.load_model(model_filename=self.ROFORMER_MODEL)
+        with _float32_default_dtype():
+            sep.load_model(model_filename=self.ROFORMER_MODEL)
 
         if cb:
             cb("Separating vocals…", 0.3)
@@ -344,8 +308,8 @@ class StemService:
 
         sep.output_dir = str(output_dir)
         sep.output_format = "flac"
-        _ensure_checkpoint_float32("/tmp/audio-separator-models/", self.ROFORMER_MODEL)
-        sep.load_model(model_filename=self.ROFORMER_MODEL)
+        with _float32_default_dtype():
+            sep.load_model(model_filename=self.ROFORMER_MODEL)
 
         if cb:
             cb("Pass 1/2: Separating…", 0.15)
