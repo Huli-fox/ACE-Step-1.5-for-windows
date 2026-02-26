@@ -490,3 +490,58 @@ Brief description.
 ### How it works
 - ...
 -->
+
+---
+
+## Audio Enhancement Studio
+
+**Branch:** `feature/audio-enhancer`  
+**Status:** ✅ Merged  
+**Based on:** [ShmuelRonen/ComfyUI-Audio_Quality_Enhancer](https://github.com/ShmuelRonen/ComfyUI-Audio_Quality_Enhancer)
+
+Post-processing engine for enhancing generated audio quality. Ported from the ComfyUI Audio Quality Enhancer's "AI Audio Enhancer Pro" node, adapted to run as a standalone backend service with a React modal UI. No external binaries required (SoX dependency removed — reverb/echo implemented purely in Python).
+
+### What's included
+
+| File | Description |
+|------|-------------|
+| `acestep/core/audio/enhancer.py` | Core DSP engine: multi-band EQ, compression, reverb, echo, stereo widening, per-stem enhancement, preset system |
+| `acestep/api_server.py` | 4 new endpoints: `GET /v1/audio/enhance/available`, `POST /v1/audio/enhance`, `GET /v1/audio/enhance/{job_id}/progress` (SSE), `GET /v1/audio/enhance/{job_id}/download` |
+| `ace-step-ui/components/AudioEnhancerModal.tsx` | Full modal UI with presets, grouped sliders, mode toggle, SSE progress, preview player, download |
+| `ace-step-ui/components/SongDropdownMenu.tsx` | Added "Enhance Audio" menu item with Sparkles icon |
+| `ace-step-ui/App.tsx` | Registered `<AudioEnhancerModal />` |
+| `ace-step-ui/i18n/translations.ts` | `enhanceAudio` key in en/zh/ja/ko |
+| `requirements.txt` | Added `pedalboard` dependency |
+
+### How it works
+
+**Two processing modes:**
+
+1. **Simple mode** — Applies multi-band EQ and dynamics processing directly to the full mix:
+   - **Warmth:** Low-shelf filter at ~100Hz (pedalboard `LowShelfFilter` or scipy Butterworth fallback)
+   - **Clarity:** Peak filter at ~2.5kHz for vocal presence
+   - **Air/Brilliance:** High-shelf filter at ~10kHz
+   - **Dynamics:** Compressor + transient detection and boost
+
+2. **Stem-Separation mode** — Uses Demucs (`htdemucs`) to split audio into vocals, drums, bass, and other, then applies targeted per-stem enhancement before remixing:
+   - Vocals: Presence boost (3.5kHz), de-essing (7.5kHz cut), air shelf
+   - Drums: Transient detection + boost, high-end air for cymbals
+   - Bass: Low-shelf warmth, harmonic saturation for definition
+   - Other: Balanced 3-band EQ (warmth + clarity + air)
+
+**Effects (no SoX dependency):**
+- **Reverb:** Convolution with synthetically generated impulse responses (early reflections + exponential decay noise). Configurable room size and damping
+- **Echo:** Delay line with configurable delay time (0–0.5s) and feedback decay (4 repeats)
+- **Stereo widening:** Mid/side decomposition, frequency-dependent width, Haas effect (small inter-channel delay), bass centering below 150Hz, subtle saturation for cohesion
+
+**6 built-in presets:** Radio Ready, Warm & Rich, Bright & Clear, Club Master, Lo-Fi Chill, Cinematic — each sets all parameters to curated values.
+
+### Dependencies
+
+- **Required:** `numpy`, `scipy`, `soundfile` (already in requirements)
+- **Recommended:** `pedalboard` (now in requirements — provides higher-quality EQ, compression, and limiting via Spotify's audio processing library)
+- **Optional:** `demucs` (for stem-separation mode — falls back to simple mode if unavailable)
+
+### VRAM offloading
+
+When using stem-separation mode, ACE-Step's models (DiT, VAE, tokenizer) are automatically offloaded to CPU before Demucs runs, then restored to GPU afterwards — same pattern as the stem separation feature.

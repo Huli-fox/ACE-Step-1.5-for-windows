@@ -55,6 +55,9 @@ Pre-process source audio before generation with two independent controls: **Temp
 ### 🎛️ Server-Side Stem Separation
 Professional-grade audio stem separation powered by BS-RoFormer (SDR 12.97) and Demucs, with 4 separation modes: Vocals Only, 4-Stem, 6-Stem, and Two-Pass (best quality). Results appear in a **synchronized multi-track mixer** with per-stem volume, mute/solo, and download controls. Models are lazy-downloaded on first use (~1.8 GB). ACE-Step models are automatically offloaded to CPU during separation and restored to GPU after, preventing VRAM exhaustion.
 
+### ✨ Audio Enhancement Studio
+Post-processing engine ported from [ComfyUI-Audio_Quality_Enhancer](https://github.com/ShmuelRonen/ComfyUI-Audio_Quality_Enhancer). Apply multi-band EQ (clarity, warmth, air/brilliance, dynamics), reverb (synthetic IR convolution), echo, and stereo widening (mid/side + Haas effect) to any track. **Two modes:** Simple (full-mix DSP via [pedalboard](https://github.com/spotify/pedalboard)/scipy) and Stem Separation (Demucs splits → per-stem targeted enhancement → remix). Comes with **6 built-in presets** (Radio Ready, Warm & Rich, Bright & Clear, Club Master, Lo-Fi Chill, Cinematic) and full manual control. Accessible from any song's dropdown menu → "Enhance Audio".
+
 ---
 
 ## Upstream Features
@@ -156,3 +159,4 @@ Then open http://localhost:3000 in your browser.
 - **ACE-Step 1.5** — [ace-step/ACE-Step-1.5](https://github.com/ace-step/ACE-Step-1.5) (original model & backend)
 - **Windows integration** — [sdbds/ACE-Step-1.5-for-windows](https://github.com/sdbds/ACE-Step-1.5-for-windows) (upstream fork)
 - **Frontend** — [fspecii/ace-step-ui](https://github.com/fspecii/ace-step-ui) (original UI)
+- **Audio Enhancement** — [ShmuelRonen/ComfyUI-Audio_Quality_Enhancer](https://github.com/ShmuelRonen/ComfyUI-Audio_Quality_Enhancer) (DSP engine inspiration)
