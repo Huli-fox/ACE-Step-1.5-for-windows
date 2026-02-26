@@ -25,44 +25,52 @@ from loguru import logger
 
 
 # ---------------------------------------------------------------------------
-# BFloat16 workaround for Windows MKL FFT
+# BFloat16 workaround for Windows MKL FFT  (PyTorch < 2.10)
 # ---------------------------------------------------------------------------
 
 @contextmanager
 def _force_float32_load():
-    """Temporarily patch torch.load to cast bfloat16 tensors to float32.
+    """Patch torch.fft functions to auto-cast bfloat16 → float32.
 
-    Windows MKL FFT doesn't support bfloat16, so BS-RoFormer checkpoints
-    (saved in bfloat16) crash during model creation.  This context manager
-    intercepts torch.load and converts any bfloat16 tensors to float32.
+    Windows MKL FFT doesn't support bfloat16, so BS-RoFormer's model
+    creation crashes.  This wraps rfft/irfft/fft/ifft to cast inputs
+    to float32 before computing, then cast the result back.
+
+    Only activates on Windows.  On Linux/Mac cuFFT handles bfloat16
+    natively.
     """
     if sys.platform != "win32":
         yield
         return
 
     import torch
+    import torch.fft as _fft
 
-    _original_load = torch.load
+    _originals = {}
+    _fft_names = ["rfft", "irfft", "fft", "ifft", "rfft2", "irfft2", "fftn", "ifftn", "rfftn", "irfftn"]
 
-    def _patched_load(*args, **kwargs):
-        result = _original_load(*args, **kwargs)
-        return _convert_bf16(result)
+    def _make_wrapper(orig_fn):
+        def _wrapper(input, *args, **kwargs):
+            if input.dtype == torch.bfloat16:
+                result = orig_fn(input.float(), *args, **kwargs)
+                # Only cast back for real-valued outputs (irfft etc)
+                if result.is_complex():
+                    return result  # complex tensors stay float32
+                return result
+            return orig_fn(input, *args, **kwargs)
+        return _wrapper
 
-    def _convert_bf16(obj):
-        if isinstance(obj, torch.Tensor) and obj.dtype == torch.bfloat16:
-            return obj.float()
-        if isinstance(obj, dict):
-            return {k: _convert_bf16(v) for k, v in obj.items()}
-        if isinstance(obj, (list, tuple)):
-            converted = [_convert_bf16(v) for v in obj]
-            return type(obj)(converted)
-        return obj
+    for name in _fft_names:
+        orig = getattr(_fft, name, None)
+        if orig is not None:
+            _originals[name] = orig
+            setattr(_fft, name, _make_wrapper(orig))
 
-    torch.load = _patched_load
     try:
         yield
     finally:
-        torch.load = _original_load
+        for name, orig in _originals.items():
+            setattr(_fft, name, orig)
 
 
 # ---------------------------------------------------------------------------
