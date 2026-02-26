@@ -28,13 +28,23 @@ except ImportError:
     PEDALBOARD_AVAILABLE = False
 
 # Optional: Demucs for stem separation
+# First try audio_separator (which bundles Demucs internally — this is what
+# the stem separation feature uses).  Fall back to standalone demucs package.
+DEMUCS_AVAILABLE = False
+_DEMUCS_BACKEND = None          # "audio_separator" or "standalone"
 try:
-    from demucs.pretrained import get_model
-    from demucs.apply import apply_model
-    import torch
+    from audio_separator.separator import Separator  # noqa: F401
     DEMUCS_AVAILABLE = True
+    _DEMUCS_BACKEND = "audio_separator"
 except ImportError:
-    DEMUCS_AVAILABLE = False
+    try:
+        from demucs.pretrained import get_model
+        from demucs.apply import apply_model
+        import torch
+        DEMUCS_AVAILABLE = True
+        _DEMUCS_BACKEND = "standalone"
+    except ImportError:
+        pass
 
 # Optional: librosa for resampling
 try:
@@ -457,16 +467,32 @@ class AudioEnhancer:
         self._demucs_model_name = None
 
     def _load_demucs(self, model_name: str = "htdemucs", device: str = "cuda"):
-        """Load Demucs model on demand."""
+        """Load Demucs model on demand.
+
+        Supports two backends:
+          - "audio_separator": uses audio_separator.Separator (bundled Demucs)
+          - "standalone": uses demucs.pretrained directly
+        """
         if not DEMUCS_AVAILABLE:
             return None
         try:
-            if self._demucs_model is None or self._demucs_model_name != model_name:
-                logger.info(f"Loading Demucs model: {model_name}")
-                self._demucs_model = get_model(model_name)
-                self._demucs_model_name = model_name
-                self._demucs_model.to(device)
-            return self._demucs_model
+            if _DEMUCS_BACKEND == "audio_separator":
+                if self._demucs_model is None or self._demucs_model_name != model_name:
+                    logger.info(f"Loading audio_separator with Demucs model: {model_name}")
+                    from audio_separator.separator import Separator
+                    self._demucs_model = Separator()
+                    model_filename = f"{model_name}.yaml"
+                    self._demucs_model.load_model(model_filename=model_filename)
+                    self._demucs_model_name = model_name
+                return self._demucs_model
+            else:
+                # Standalone demucs
+                if self._demucs_model is None or self._demucs_model_name != model_name:
+                    logger.info(f"Loading Demucs model: {model_name}")
+                    self._demucs_model = get_model(model_name)
+                    self._demucs_model_name = model_name
+                    self._demucs_model.to(device)
+                return self._demucs_model
         except Exception as e:
             logger.error(f"Failed to load Demucs: {e}")
             return None
@@ -579,7 +605,12 @@ class AudioEnhancer:
     def _process_with_demucs(self, audio: np.ndarray, sample_rate: int,
                              params: Dict[str, Any],
                              progress_callback=None) -> np.ndarray:
-        """Process using Demucs stem separation for targeted enhancement."""
+        """Process using Demucs stem separation for targeted enhancement.
+
+        Supports two backends:
+          - audio_separator: separates to temp WAV files, reads them back
+          - standalone demucs: uses tensors directly
+        """
         def report(pct, msg):
             if progress_callback:
                 progress_callback(pct, msg)
@@ -595,44 +626,16 @@ class AudioEnhancer:
 
             report(0.1, f"Running Demucs ({model_name})…")
 
-            # Prepare tensor: [batch, channels, samples]
-            audio_tensor = torch.tensor(audio, dtype=torch.float32).unsqueeze(0)
-
-            # Resample if needed
-            model_sr = model.samplerate
-            if sample_rate != model_sr and LIBROSA_AVAILABLE:
-                logger.info(f"Resampling {sample_rate}Hz → {model_sr}Hz for Demucs")
-                resampled = []
-                for ch in range(audio.shape[0]):
-                    resampled.append(librosa.resample(audio[ch], orig_sr=sample_rate, target_sr=model_sr))
-                audio_tensor = torch.tensor(np.stack(resampled), dtype=torch.float32).unsqueeze(0)
-                working_sr = model_sr
+            if _DEMUCS_BACKEND == "audio_separator":
+                stems = self._separate_with_audio_separator(
+                    audio, sample_rate, model, report
+                )
             else:
-                working_sr = sample_rate
-
-            audio_tensor = audio_tensor.to(device)
-
-            report(0.2, "Separating stems…")
-
-            with torch.no_grad():
-                sources = apply_model(model, audio_tensor)
-
-            sources_np = sources.cpu().numpy()[0]
-            stem_names = model.sources
+                stems = self._separate_with_standalone_demucs(
+                    audio, sample_rate, model, device, report
+                )
 
             report(0.4, "Enhancing stems…")
-
-            stems = {}
-            for i, name in enumerate(stem_names):
-                stems[name] = sources_np[i]
-                # Resample back if needed
-                if working_sr != sample_rate and LIBROSA_AVAILABLE:
-                    resampled = []
-                    for ch in range(stems[name].shape[0]):
-                        resampled.append(librosa.resample(
-                            stems[name][ch], orig_sr=working_sr, target_sr=sample_rate
-                        ))
-                    stems[name] = np.stack(resampled)
 
             # Enhance each stem
             enhanced_stems = {}
@@ -688,3 +691,121 @@ class AudioEnhancer:
                            params.get("clarity", 0.4) * enhancement_level,
                            params.get("air", 0.3) * enhancement_level,
                            params.get("dynamics", 0.3) * enhancement_level)
+
+    def _separate_with_audio_separator(self, audio: np.ndarray, sample_rate: int,
+                                        separator, report) -> Dict[str, np.ndarray]:
+        """Separate stems using audio_separator (writes temp files, reads back)."""
+        import tempfile
+        import shutil
+
+        tmp_dir = tempfile.mkdtemp(prefix="ace_enhance_")
+        try:
+            # Write source audio to a temp WAV
+            src_path = os.path.join(tmp_dir, "source.wav")
+            sf.write(src_path, audio.T, sample_rate)  # [channels, samples] → [samples, channels]
+
+            report(0.15, "Separating stems with audio_separator…")
+
+            # Configure output directory
+            separator.output_dir = tmp_dir
+
+            # Run separation
+            stem_files = separator.separate(src_path)
+            logger.info(f"audio_separator produced {len(stem_files)} stem files: {stem_files}")
+
+            report(0.35, "Reading separated stems…")
+
+            # Read stem files back as numpy arrays
+            stems = {}
+            stem_name_map = {
+                "vocals": "vocals",
+                "drums": "drums",
+                "bass": "bass",
+                "guitar": "other",
+                "piano": "other",
+                "other": "other",
+            }
+
+            for stem_path in stem_files:
+                if not os.path.isabs(stem_path):
+                    stem_path = os.path.join(tmp_dir, stem_path)
+                if not os.path.exists(stem_path):
+                    continue
+
+                basename = os.path.splitext(os.path.basename(stem_path))[0].lower()
+
+                # Try to match stem name from filename
+                matched_name = None
+                for key in stem_name_map:
+                    if key in basename:
+                        matched_name = stem_name_map[key]
+                        break
+
+                if matched_name is None:
+                    continue
+
+                stem_audio, _ = sf.read(stem_path, dtype='float32')
+                if stem_audio.ndim == 1:
+                    stem_audio = stem_audio.reshape(1, -1)
+                else:
+                    stem_audio = stem_audio.T  # [samples, channels] → [channels, samples]
+
+                # Accumulate if multiple files map to same stem name (e.g. guitar+piano → other)
+                if matched_name in stems:
+                    min_len = min(stems[matched_name].shape[1], stem_audio.shape[1])
+                    stems[matched_name] = stems[matched_name][:, :min_len] + stem_audio[:, :min_len]
+                else:
+                    stems[matched_name] = stem_audio
+
+            return stems
+
+        finally:
+            # Clean up temp files
+            try:
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+            except Exception:
+                pass
+
+    def _separate_with_standalone_demucs(self, audio: np.ndarray, sample_rate: int,
+                                          model, device: str, report) -> Dict[str, np.ndarray]:
+        """Separate stems using standalone demucs package (tensor-based)."""
+        import torch as _torch
+
+        # Prepare tensor: [batch, channels, samples]
+        audio_tensor = _torch.tensor(audio, dtype=_torch.float32).unsqueeze(0)
+
+        # Resample if needed
+        model_sr = model.samplerate
+        if sample_rate != model_sr and LIBROSA_AVAILABLE:
+            logger.info(f"Resampling {sample_rate}Hz → {model_sr}Hz for Demucs")
+            resampled = []
+            for ch in range(audio.shape[0]):
+                resampled.append(librosa.resample(audio[ch], orig_sr=sample_rate, target_sr=model_sr))
+            audio_tensor = _torch.tensor(np.stack(resampled), dtype=_torch.float32).unsqueeze(0)
+            working_sr = model_sr
+        else:
+            working_sr = sample_rate
+
+        audio_tensor = audio_tensor.to(device)
+
+        report(0.2, "Separating stems…")
+
+        with _torch.no_grad():
+            sources = apply_model(model, audio_tensor)
+
+        sources_np = sources.cpu().numpy()[0]
+        stem_names = model.sources
+
+        stems = {}
+        for i, name in enumerate(stem_names):
+            stems[name] = sources_np[i]
+            # Resample back if needed
+            if working_sr != sample_rate and LIBROSA_AVAILABLE:
+                resampled = []
+                for ch in range(stems[name].shape[0]):
+                    resampled.append(librosa.resample(
+                        stems[name][ch], orig_sr=working_sr, target_sr=sample_rate
+                    ))
+                stems[name] = np.stack(resampled)
+
+        return stems
