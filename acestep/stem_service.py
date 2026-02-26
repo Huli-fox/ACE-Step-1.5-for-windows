@@ -16,7 +16,6 @@ import os
 import sys
 import threading
 import time
-from contextlib import contextmanager
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
 from uuid import uuid4
@@ -28,49 +27,62 @@ from loguru import logger
 # BFloat16 workaround for Windows MKL FFT  (PyTorch < 2.10)
 # ---------------------------------------------------------------------------
 
-@contextmanager
-def _force_float32_load():
-    """Patch torch.fft functions to auto-cast bfloat16 → float32.
+def _ensure_checkpoint_float32(model_dir: str, model_filename: str) -> None:
+    """Convert bfloat16 tensors to float32 in a checkpoint file on disk.
 
-    Windows MKL FFT doesn't support bfloat16, so BS-RoFormer's model
-    creation crashes.  This wraps rfft/irfft/fft/ifft to cast inputs
-    to float32 before computing, then cast the result back.
+    Windows MKL FFT doesn't support bfloat16, so BS-RoFormer checkpoints
+    (saved in bfloat16) crash during model creation.  This function converts
+    the checkpoint once on disk, so audio_separator loads it in float32
+    natively — no monkey-patching needed.
 
-    Only activates on Windows.  On Linux/Mac cuFFT handles bfloat16
-    natively.
+    Only runs on Windows and only if bfloat16 tensors are detected.
     """
     if sys.platform != "win32":
-        yield
         return
 
+    ckpt_path = Path(model_dir) / model_filename
+    if not ckpt_path.exists():
+        return  # Not yet downloaded; audio_separator will download it
+
     import torch
-    import torch.fft as _fft
 
-    _originals = {}
-    _fft_names = ["rfft", "irfft", "fft", "ifft", "rfft2", "irfft2", "fftn", "ifftn", "rfftn", "irfftn"]
+    logger.info(f"[StemService] Checking checkpoint dtype: {ckpt_path}")
+    state = torch.load(str(ckpt_path), map_location="cpu", weights_only=False)
 
-    def _make_wrapper(orig_fn):
-        def _wrapper(input, *args, **kwargs):
-            if input.dtype == torch.bfloat16:
-                result = orig_fn(input.float(), *args, **kwargs)
-                # Only cast back for real-valued outputs (irfft etc)
-                if result.is_complex():
-                    return result  # complex tensors stay float32
-                return result
-            return orig_fn(input, *args, **kwargs)
-        return _wrapper
+    # Walk the state dict and detect bfloat16
+    has_bf16 = False
+    if isinstance(state, dict):
+        for k, v in state.items():
+            if isinstance(v, torch.Tensor) and v.dtype == torch.bfloat16:
+                has_bf16 = True
+                break
+            # Handle nested dicts (e.g. {"state_dict": {...}})
+            if isinstance(v, dict):
+                for kk, vv in v.items():
+                    if isinstance(vv, torch.Tensor) and vv.dtype == torch.bfloat16:
+                        has_bf16 = True
+                        break
+                if has_bf16:
+                    break
 
-    for name in _fft_names:
-        orig = getattr(_fft, name, None)
-        if orig is not None:
-            _originals[name] = orig
-            setattr(_fft, name, _make_wrapper(orig))
+    if not has_bf16:
+        logger.info("[StemService] Checkpoint is already float32 — no conversion needed")
+        return
 
-    try:
-        yield
-    finally:
-        for name, orig in _originals.items():
-            setattr(_fft, name, orig)
+    logger.info("[StemService] Converting checkpoint from bfloat16 → float32…")
+
+    def _convert(obj):
+        if isinstance(obj, torch.Tensor) and obj.dtype == torch.bfloat16:
+            return obj.float()
+        if isinstance(obj, dict):
+            return {k: _convert(v) for k, v in obj.items()}
+        if isinstance(obj, (list, tuple)):
+            return type(obj)(_convert(v) for v in obj)
+        return obj
+
+    state = _convert(state)
+    torch.save(state, str(ckpt_path))
+    logger.info("[StemService] Checkpoint converted and saved ✓")
 
 
 # ---------------------------------------------------------------------------
@@ -237,8 +249,8 @@ class StemService:
 
         sep.output_dir = str(output_dir)
         sep.output_format = "flac"
-        with _force_float32_load():
-            sep.load_model(model_filename=self.ROFORMER_MODEL)
+        _ensure_checkpoint_float32("/tmp/audio-separator-models/", self.ROFORMER_MODEL)
+        sep.load_model(model_filename=self.ROFORMER_MODEL)
 
         if cb:
             cb("Separating vocals…", 0.3)
@@ -332,8 +344,8 @@ class StemService:
 
         sep.output_dir = str(output_dir)
         sep.output_format = "flac"
-        with _force_float32_load():
-            sep.load_model(model_filename=self.ROFORMER_MODEL)
+        _ensure_checkpoint_float32("/tmp/audio-separator-models/", self.ROFORMER_MODEL)
+        sep.load_model(model_filename=self.ROFORMER_MODEL)
 
         if cb:
             cb("Pass 1/2: Separating…", 0.15)
