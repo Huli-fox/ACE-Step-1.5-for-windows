@@ -752,11 +752,13 @@ class AudioEnhancer:
 
             report(0.15, "Separating stems with audio_separator…")
 
-            # Configure output directory
+            # IMPORTANT: audio_separator's internal handler captures output_dir
+            # during load_model(), so we MUST set output_dir and re-call
+            # load_model() before every separate() — same pattern as stem_service.py.
             separator.output_dir = tmp_dir
-
-            # Run separation (wrapped in float32 to avoid BFloat16 MKL crash)
+            model_name = self._demucs_model_name or "htdemucs"
             with _float32_default_dtype():
+                separator.load_model(model_filename=f"{model_name}.yaml")
                 stem_files = separator.separate(src_path)
             logger.info(f"audio_separator produced {len(stem_files)} stem files: {stem_files}")
 
