@@ -2,3 +2,4 @@
 	path = ace-step-ui
 	url = https://github.com/scragnog/ace-step-ui-localization
 	branch = qinglong
+	update = merge
