@@ -244,7 +244,8 @@ class StemService:
 
         sep.output_dir = str(output_dir)
         sep.output_format = "flac"
-        sep.load_model(model_filename=self.DEMUCS_FT_MODEL)
+        with _float32_default_dtype():
+            sep.load_model(model_filename=self.DEMUCS_FT_MODEL)
 
         if cb:
             cb("Separating stems (4-stem)…", 0.3)
@@ -275,7 +276,8 @@ class StemService:
 
         sep.output_dir = str(output_dir)
         sep.output_format = "flac"
-        sep.load_model(model_filename=self.DEMUCS_6S_MODEL)
+        with _float32_default_dtype():
+            sep.load_model(model_filename=self.DEMUCS_6S_MODEL)
 
         if cb:
             cb("Separating stems (6-stem)…", 0.3)
@@ -341,7 +343,8 @@ class StemService:
         pass2_dir = output_dir / "pass2"
         pass2_dir.mkdir(exist_ok=True)
         sep.output_dir = str(pass2_dir)
-        sep.load_model(model_filename=self.DEMUCS_6S_MODEL)
+        with _float32_default_dtype():
+            sep.load_model(model_filename=self.DEMUCS_6S_MODEL)
 
         if cb:
             cb("Pass 2/2: Separating…", 0.55)
