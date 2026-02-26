@@ -52,6 +52,9 @@ Isolate individual stems from any audio file using ACE-Step's generative extract
 ### 🎚️ Tempo Scale & Pitch Shift (Cover Mode)
 Pre-process source audio before generation with two independent controls: **Tempo Scale** (0.5x–2.0x) changes speed without affecting pitch using phase vocoder, and **Pitch Shift** (-12 to +12 semitones) transposes the key without changing speed. Perfect for making a male vocal track work in a female range (+3–5 semitones) or adjusting cover tempo independently from melody. Both can be combined simultaneously.
 
+### 🎛️ Server-Side Stem Separation
+Professional-grade audio stem separation powered by BS-RoFormer (SDR 12.97) and Demucs, with 4 separation modes: Vocals Only, 4-Stem, 6-Stem, and Two-Pass (best quality). Results appear in a **synchronized multi-track mixer** with per-stem volume, mute/solo, and download controls. Models are lazy-downloaded on first use (~1.8 GB). ACE-Step models are automatically offloaded to CPU during separation and restored to GPU after, preventing VRAM exhaustion.
+
 ---
 
 ## Upstream Features
