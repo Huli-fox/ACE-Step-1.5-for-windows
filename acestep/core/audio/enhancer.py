@@ -659,6 +659,20 @@ class AudioEnhancer:
                     audio, sample_rate, model, device, report
                 )
 
+            logger.info(f"Stem separation returned {len(stems)} stems: {list(stems.keys())}")
+            for sname, sdata in stems.items():
+                logger.info(f"  Stem '{sname}': shape={sdata.shape}, max={np.max(np.abs(sdata)):.6f}")
+
+            # Safety fallback: if no stems extracted, use simple EQ mode
+            if not stems:
+                logger.warning("No stems extracted — falling back to simple EQ mode")
+                report(0.4, "No stems found, applying simple EQ…")
+                return apply_eq(audio, sample_rate,
+                               params.get("warmth", 0.3) * enhancement_level,
+                               params.get("clarity", 0.4) * enhancement_level,
+                               params.get("air", 0.3) * enhancement_level,
+                               params.get("dynamics", 0.3) * enhancement_level)
+
             report(0.4, "Enhancing stems…")
 
             # Enhance each stem
@@ -702,8 +716,16 @@ class AudioEnhancer:
 
             # Normalize
             max_val = np.max(np.abs(result))
+            logger.info(f"Remix result: shape={result.shape}, max={max_val:.6f}")
             if max_val > 0.98:
                 result = result * (0.98 / max_val)
+            elif max_val < 0.001:
+                logger.error("Remix result is near-silent! Falling back to original audio with EQ.")
+                return apply_eq(audio, sample_rate,
+                               params.get("warmth", 0.3) * enhancement_level,
+                               params.get("clarity", 0.4) * enhancement_level,
+                               params.get("air", 0.3) * enhancement_level,
+                               params.get("dynamics", 0.3) * enhancement_level)
 
             return result
 
@@ -755,9 +777,11 @@ class AudioEnhancer:
                 if not os.path.isabs(stem_path):
                     stem_path = os.path.join(tmp_dir, stem_path)
                 if not os.path.exists(stem_path):
+                    logger.warning(f"Stem file does not exist: {stem_path}")
                     continue
 
                 basename = os.path.splitext(os.path.basename(stem_path))[0].lower()
+                logger.info(f"Processing stem file: {os.path.basename(stem_path)} (basename_lower='{basename}')")
 
                 # Try to match stem name from filename
                 matched_name = None
@@ -767,7 +791,10 @@ class AudioEnhancer:
                         break
 
                 if matched_name is None:
+                    logger.warning(f"Could not match stem name from filename: {basename}")
                     continue
+
+                logger.info(f"  → Mapped to stem: '{matched_name}'")
 
                 stem_audio, _ = sf.read(stem_path, dtype='float32')
                 if stem_audio.ndim == 1:
