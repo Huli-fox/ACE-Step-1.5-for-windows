@@ -4168,6 +4168,25 @@ def create_app() -> FastAPI:
             }
 
         def _run():
+            # --- VRAM offloading: move ACE-Step models to CPU ---
+            handler = getattr(app.state, "handler", None)
+            offloaded_parts = []  # list of (name, module, original_device)
+            if handler and getattr(handler, "_models_loaded", False):
+                import torch
+                try:
+                    for attr_name in ("model", "vae", "tokenizer"):
+                        mod = getattr(handler, attr_name, None)
+                        if mod is not None and hasattr(mod, "to"):
+                            dev = next(mod.parameters()).device if hasattr(mod, "parameters") else None
+                            if dev is not None and dev.type != "cpu":
+                                logger.info(f"[Stem] Offloading {attr_name} from {dev} → cpu")
+                                mod.to("cpu")
+                                offloaded_parts.append((attr_name, mod, dev))
+                    torch.cuda.empty_cache()
+                    logger.info("[Stem] ACE-Step models offloaded to CPU for stem separation")
+                except Exception as e:
+                    logger.warning(f"[Stem] VRAM offload failed (non-fatal): {e}")
+
             try:
                 svc = _get_stem_service()
 
@@ -4189,6 +4208,18 @@ def create_app() -> FastAPI:
                     _stem_jobs[job_id]["status"] = "failed"
                     _stem_jobs[job_id]["error"] = str(e)
                     _stem_jobs[job_id]["message"] = f"Error: {e}"
+            finally:
+                # --- Restore ACE-Step models to GPU ---
+                if offloaded_parts:
+                    import torch
+                    for attr_name, mod, orig_dev in offloaded_parts:
+                        try:
+                            logger.info(f"[Stem] Restoring {attr_name} → {orig_dev}")
+                            mod.to(orig_dev)
+                        except Exception as e:
+                            logger.warning(f"[Stem] Failed to restore {attr_name}: {e}")
+                    torch.cuda.empty_cache()
+                    logger.info("[Stem] ACE-Step models restored to GPU")
 
         _stem_executor.submit(_run)
         return {"job_id": job_id, "status": "running"}
