@@ -4137,9 +4137,21 @@ def create_app() -> FastAPI:
         if not audio_path:
             raise HTTPException(400, "audio_path is required")
 
-        # Resolve relative server paths to absolute
-        if not audio_path.startswith("http") and not os.path.isabs(audio_path):
-            project_root = _get_project_root()
+        # Resolve audio paths to actual disk locations
+        project_root = _get_project_root()
+        if audio_path.startswith("/audio/"):
+            # Express serves /audio/ from ace-step-ui/server/public/audio/
+            audio_path = os.path.join(
+                project_root, "ace-step-ui", "server", "public", audio_path.lstrip("/")
+            )
+        elif audio_path.startswith("/v1/audio"):
+            # Python API URL — extract the path= query param
+            import urllib.parse as _urlparse
+            parsed = _urlparse.urlparse(audio_path)
+            qs = _urlparse.parse_qs(parsed.query)
+            if "path" in qs:
+                audio_path = qs["path"][0]
+        elif not audio_path.startswith("http") and not os.path.isabs(audio_path):
             audio_path = os.path.join(project_root, audio_path)
 
         if not os.path.isfile(audio_path):
