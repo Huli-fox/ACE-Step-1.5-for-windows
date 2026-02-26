@@ -187,7 +187,13 @@ class StemService:
             raise ValueError(f"Unknown stem mode: {mode!r}. "
                              f"Choose from: {', '.join(dispatch)}")
 
-        return handler(separator, audio_path, output_dir, progress_callback)
+        # Wrap the ENTIRE separation pipeline in float32 default dtype.
+        # ACE-Step sets default dtype to bfloat16 for GPU inference, but
+        # audio_separator's models (both RoFormer and Demucs) create
+        # internal tensors that inherit the default dtype — crash or
+        # dtype-mismatch on Windows MKL FFT and convolution layers.
+        with _float32_default_dtype():
+            return handler(separator, audio_path, output_dir, progress_callback)
 
     # ------------------------------------------------------------------
     # Internal separation strategies
@@ -213,8 +219,7 @@ class StemService:
 
         sep.output_dir = str(output_dir)
         sep.output_format = "flac"
-        with _float32_default_dtype():
-            sep.load_model(model_filename=self.ROFORMER_MODEL)
+        sep.load_model(model_filename=self.ROFORMER_MODEL)
 
         if cb:
             cb("Separating vocals…", 0.3)
@@ -244,8 +249,7 @@ class StemService:
 
         sep.output_dir = str(output_dir)
         sep.output_format = "flac"
-        with _float32_default_dtype():
-            sep.load_model(model_filename=self.DEMUCS_FT_MODEL)
+        sep.load_model(model_filename=self.DEMUCS_FT_MODEL)
 
         if cb:
             cb("Separating stems (4-stem)…", 0.3)
@@ -276,8 +280,7 @@ class StemService:
 
         sep.output_dir = str(output_dir)
         sep.output_format = "flac"
-        with _float32_default_dtype():
-            sep.load_model(model_filename=self.DEMUCS_6S_MODEL)
+        sep.load_model(model_filename=self.DEMUCS_6S_MODEL)
 
         if cb:
             cb("Separating stems (6-stem)…", 0.3)
@@ -310,8 +313,7 @@ class StemService:
 
         sep.output_dir = str(output_dir)
         sep.output_format = "flac"
-        with _float32_default_dtype():
-            sep.load_model(model_filename=self.ROFORMER_MODEL)
+        sep.load_model(model_filename=self.ROFORMER_MODEL)
 
         if cb:
             cb("Pass 1/2: Separating…", 0.15)
@@ -343,8 +345,7 @@ class StemService:
         pass2_dir = output_dir / "pass2"
         pass2_dir.mkdir(exist_ok=True)
         sep.output_dir = str(pass2_dir)
-        with _float32_default_dtype():
-            sep.load_model(model_filename=self.DEMUCS_6S_MODEL)
+        sep.load_model(model_filename=self.DEMUCS_6S_MODEL)
 
         if cb:
             cb("Pass 2/2: Separating…", 0.55)
