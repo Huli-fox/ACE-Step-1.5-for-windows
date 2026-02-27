@@ -424,6 +424,106 @@ Full stem extraction workflow using ACE-Step's generative extract task. Select o
 
 ---
 
+## Server-Side Stem Separation
+
+**Branch:** `feature/server-stem-split`  
+**Status:** ✅ Merged
+
+Professional-grade audio stem separation using BS-RoFormer and Demucs models, fully integrated into the Python API with a synchronized multi-track mixer UI. Replaces the old client-side demucs-web page.
+
+### What's included
+
+| File | Description |
+|------|-------------|
+| `acestep/stem_service.py` | **[NEW]** Core separation service — lazy-init `audio_separator`, 4 modes (vocals, multi-4, multi-6, two-pass), thread-safe singleton |
+| `acestep/api_server.py` | 4 new endpoints: `/v1/stems/available`, `/v1/stems/separate`, `/v1/stems/{job_id}/progress` (SSE), `/v1/stems/{job_id}/download/{stem_type}`. Includes VRAM offloading (ACE-Step models → CPU during separation → GPU after). |
+| `install_audio_separator.py` | **[NEW]** Standalone installer — handles PyTorch version detection, ONNX Runtime conflicts, platform-specific deps |
+| `1、install-uv-qinglong.ps1` | Updated to run `install_audio_separator.py` during first-time setup |
+| `ace-step-ui/components/StemSplitterModal.tsx` | **[NEW]** Self-managing modal with mode selection, SSE progress, and synchronized multi-track mixer |
+| `ace-step-ui/components/SongList.tsx` | "Extract Stems" option in track context menu |
+| `ace-step-ui/App.tsx` | StemSplitterModal mount point |
+
+### Separation Modes
+
+| Mode | Model | Stems | Quality |
+|------|-------|-------|---------|
+| **Vocals Only** | BS-RoFormer | 2 (vocals + instrumental) | Best vocal isolation (SDR 12.97) |
+| **4-Stem** | htdemucs_ft | 4 (vocals, drums, bass, other) | Fast, good general split |
+| **6-Stem** | htdemucs_6s | 6 (vocals, drums, bass, guitar, piano, other) | More instrument detail |
+| **Two-Pass (Best)** | RoFormer → htdemucs_6s | 7 | RoFormer vocals + 6-stem instrumental split |
+
+### Multi-Track Mixer
+
+After separation completes, stems are displayed in a synchronized mixer with:
+- **Master transport** — single play button syncs all stems, seekable progress bar with time display
+- **Per-stem volume slider** — independent gain control for each stem
+- **Mute/Solo** — mute individual stems or solo one to hear it in isolation
+- **Download** — download individual stems as FLAC files
+- Colour-coded channels by stem type (vocals=pink, drums=amber, bass=green, guitar=blue, piano=purple)
+
+### VRAM Management
+
+To prevent out-of-memory errors, ACE-Step's models (DiT, VAE, tokenizer) are automatically moved to CPU before stem separation runs, then restored to GPU afterwards. This frees ~10GB of VRAM for the separation models.
+
+### Windows Compatibility
+
+The `_float32_default_dtype()` context manager temporarily restores `torch.float32` as the default dtype during the entire separation pipeline. This is necessary because ACE-Step sets the global default dtype to `bfloat16` for GPU inference, but both BS-RoFormer and Demucs create internal tensors (via `torch.randn`, `torch.stft`) that inherit this dtype — causing MKL FFT crashes on Windows.
+
+### Models
+
+Models are lazy-downloaded on first use (~1.8 GB total) to `/tmp/audio-separator-models/`:
+- `model_bs_roformer_ep_317_sdr_12.9755.ckpt` (BS-RoFormer, ~1.3 GB)
+- `htdemucs_6s.yaml` (Demucs 6-stem, ~55 MB — weights downloaded from Facebook servers)
+- `htdemucs_ft.yaml` (Demucs fine-tuned, ~85 MB)
+
+## Live Music Visualizer
+
+**Branch:** `qinglong`  
+**Status:** ✅ Merged
+
+Real-time audio-reactive visualizations powered by the Web Audio API. Repurposes the existing video generator's drawing engine into a shared module used by both live playback visualization and MP4 export. Features 10 presets, a Winamp/MilkDrop-inspired fullscreen mode, and an optional ambient background for the song list.
+
+### What's included
+
+| File | Description |
+|------|-------------|
+| `ace-step-ui/components/visualizerEngine.ts` | **[NEW]** Shared rendering engine extracted from VideoGeneratorModal — 10 drawing functions, particle system, album art, 13 post-processing effects, unified `renderVisualizerFrame()` entry point |
+| `ace-step-ui/context/AudioAnalysisContext.tsx` | **[NEW]** React context providing a shared `AnalyserNode` connected to the main player's `HTMLAudioElement` via `createMediaElementSource` |
+| `ace-step-ui/components/LiveVisualizer.tsx` | **[NEW]** Core canvas component with preset picker dropdown, Random mode (~30s auto-cycle), and dimmed mode for background use |
+| `ace-step-ui/components/FullscreenVisualizer.tsx` | **[NEW]** Portal-based fullscreen overlay with auto-hiding HUD (song title, artist, progress bar, playback controls). Uses the Fullscreen API. |
+| `ace-step-ui/components/VideoGeneratorModal.tsx` | Refactored to import drawing functions from `visualizerEngine.ts` — removed ~350 lines of duplicate code |
+| `ace-step-ui/components/RightSidebar.tsx` | Cover art replaced by live visualizer when the displayed song is playing (fade-in animation). Preset picker and fullscreen button overlaid on canvas. |
+| `ace-step-ui/components/SongList.tsx` | Optional dimmed background visualizer behind track rows (same preset as sidebar, 15% opacity) |
+| `ace-step-ui/components/SettingsModal.tsx` | New "Visualizer" section with toggle for song list background |
+| `ace-step-ui/App.tsx` | Wrapped in `AudioAnalysisProvider`, audio analysis connected on play, fullscreen state managed, visualizer bg setting wired from localStorage to SongList |
+
+### How it works
+
+1. **Audio Analysis:** On first playback, the `AudioAnalysisProvider` creates an `AudioContext` and connects an `AnalyserNode` to the player's `HTMLAudioElement`. This single analyser feeds frequency and time-domain data to all visualizer instances.
+2. **Sidebar Visualizer:** When a song is playing and selected in the right sidebar, the static cover art fades out and a `LiveVisualizer` canvas fades in. The visualizer renders at the canvas's native resolution using `requestAnimationFrame`.
+3. **Preset Picker:** A compact dropdown (Palette icon on the canvas) lets users choose from 10 presets: NCS Circle, Linear Bars, Dual Mirror, Center Wave, Orbital, Hexagon, Oscilloscope, Digital Rain, Shockwave, and Minimal. Selection persists to `localStorage`.
+4. **Random Mode:** A "Random" option in the picker auto-cycles through presets every ~30 seconds, picking a different preset each time.
+5. **Fullscreen Mode:** Click the Maximize icon → the Fullscreen API is activated, a portal renders the visualizer filling the screen. The HUD (song title, artist, progress bar, play/pause/skip controls) auto-hides after 3 seconds of mouse inactivity and reappears on movement. Keyboard shortcuts: Space (play/pause), Escape (exit), arrows (skip).
+6. **Song List Background:** Toggleable in Settings → Visualizer → "Song list background". When enabled and music is playing, a dimmed (15% opacity) version of the same preset renders behind the track rows as an ambient visual.
+7. **Shared Engine:** `visualizerEngine.ts` is imported by both `LiveVisualizer` (real-time) and `VideoGeneratorModal` (offline MP4 export), eliminating code duplication.
+
+### Presets
+
+| Preset | Style |
+|--------|-------|
+| NCS Circle | Radial frequency bars rotating around center point |
+| Linear Bars | Classic horizontal spectrum analyzer |
+| Dual Mirror | Mirrored horizontal bars from center |
+| Center Wave | Concentric elliptical waves |
+| Orbital | Animated arcs orbiting center |
+| Hexagon | Pulsing hexagonal wireframe |
+| Oscilloscope | Real-time waveform display |
+| Digital Rain | Matrix-style falling characters |
+| Shockwave | Expanding concentric ring pulses |
+| Minimal | Clean particles-only |
+
+---
+
 <!-- 
 ## [Next Feature Name]
 
@@ -438,3 +538,58 @@ Brief description.
 ### How it works
 - ...
 -->
+
+---
+
+## Audio Enhancement Studio
+
+**Branch:** `feature/audio-enhancer`  
+**Status:** ✅ Merged  
+**Based on:** [ShmuelRonen/ComfyUI-Audio_Quality_Enhancer](https://github.com/ShmuelRonen/ComfyUI-Audio_Quality_Enhancer)
+
+Post-processing engine for enhancing generated audio quality. Ported from the ComfyUI Audio Quality Enhancer's "AI Audio Enhancer Pro" node, adapted to run as a standalone backend service with a React modal UI. No external binaries required (SoX dependency removed — reverb/echo implemented purely in Python).
+
+### What's included
+
+| File | Description |
+|------|-------------|
+| `acestep/core/audio/enhancer.py` | Core DSP engine: multi-band EQ, compression, reverb, echo, stereo widening, per-stem enhancement, preset system |
+| `acestep/api_server.py` | 4 new endpoints: `GET /v1/audio/enhance/available`, `POST /v1/audio/enhance`, `GET /v1/audio/enhance/{job_id}/progress` (SSE), `GET /v1/audio/enhance/{job_id}/download` |
+| `ace-step-ui/components/AudioEnhancerModal.tsx` | Full modal UI with presets, grouped sliders, mode toggle, SSE progress, preview player, download |
+| `ace-step-ui/components/SongDropdownMenu.tsx` | Added "Enhance Audio" menu item with Sparkles icon |
+| `ace-step-ui/App.tsx` | Registered `<AudioEnhancerModal />` |
+| `ace-step-ui/i18n/translations.ts` | `enhanceAudio` key in en/zh/ja/ko |
+| `requirements.txt` | Added `pedalboard` dependency |
+
+### How it works
+
+**Two processing modes:**
+
+1. **Simple mode** — Applies multi-band EQ and dynamics processing directly to the full mix:
+   - **Warmth:** Low-shelf filter at ~100Hz (pedalboard `LowShelfFilter` or scipy Butterworth fallback)
+   - **Clarity:** Peak filter at ~2.5kHz for vocal presence
+   - **Air/Brilliance:** High-shelf filter at ~10kHz
+   - **Dynamics:** Compressor + transient detection and boost
+
+2. **Stem-Separation mode** — Uses Demucs (`htdemucs`) to split audio into vocals, drums, bass, and other, then applies targeted per-stem enhancement before remixing:
+   - Vocals: Presence boost (3.5kHz), de-essing (7.5kHz cut), air shelf
+   - Drums: Transient detection + boost, high-end air for cymbals
+   - Bass: Low-shelf warmth, harmonic saturation for definition
+   - Other: Balanced 3-band EQ (warmth + clarity + air)
+
+**Effects (no SoX dependency):**
+- **Reverb:** Convolution with synthetically generated impulse responses (early reflections + exponential decay noise). Configurable room size and damping
+- **Echo:** Delay line with configurable delay time (0–0.5s) and feedback decay (4 repeats)
+- **Stereo widening:** Mid/side decomposition, frequency-dependent width, Haas effect (small inter-channel delay), bass centering below 150Hz, subtle saturation for cohesion
+
+**6 built-in presets:** Radio Ready, Warm & Rich, Bright & Clear, Club Master, Lo-Fi Chill, Cinematic — each sets all parameters to curated values.
+
+### Dependencies
+
+- **Required:** `numpy`, `scipy`, `soundfile` (already in requirements)
+- **Recommended:** `pedalboard` (now in requirements — provides higher-quality EQ, compression, and limiting via Spotify's audio processing library)
+- **Optional:** `demucs` (for stem-separation mode — falls back to simple mode if unavailable)
+
+### VRAM offloading
+
+When using stem-separation mode, ACE-Step's models (DiT, VAE, tokenizer) are automatically offloaded to CPU before Demucs runs, then restored to GPU afterwards — same pattern as the stem separation feature.
