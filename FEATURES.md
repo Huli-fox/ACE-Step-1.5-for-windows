@@ -476,6 +476,54 @@ Models are lazy-downloaded on first use (~1.8 GB total) to `/tmp/audio-separator
 - `htdemucs_6s.yaml` (Demucs 6-stem, ~55 MB — weights downloaded from Facebook servers)
 - `htdemucs_ft.yaml` (Demucs fine-tuned, ~85 MB)
 
+## Live Music Visualizer
+
+**Branch:** `qinglong`  
+**Status:** ✅ Merged
+
+Real-time audio-reactive visualizations powered by the Web Audio API. Repurposes the existing video generator's drawing engine into a shared module used by both live playback visualization and MP4 export. Features 10 presets, a Winamp/MilkDrop-inspired fullscreen mode, and an optional ambient background for the song list.
+
+### What's included
+
+| File | Description |
+|------|-------------|
+| `ace-step-ui/components/visualizerEngine.ts` | **[NEW]** Shared rendering engine extracted from VideoGeneratorModal — 10 drawing functions, particle system, album art, 13 post-processing effects, unified `renderVisualizerFrame()` entry point |
+| `ace-step-ui/context/AudioAnalysisContext.tsx` | **[NEW]** React context providing a shared `AnalyserNode` connected to the main player's `HTMLAudioElement` via `createMediaElementSource` |
+| `ace-step-ui/components/LiveVisualizer.tsx` | **[NEW]** Core canvas component with preset picker dropdown, Random mode (~30s auto-cycle), and dimmed mode for background use |
+| `ace-step-ui/components/FullscreenVisualizer.tsx` | **[NEW]** Portal-based fullscreen overlay with auto-hiding HUD (song title, artist, progress bar, playback controls). Uses the Fullscreen API. |
+| `ace-step-ui/components/VideoGeneratorModal.tsx` | Refactored to import drawing functions from `visualizerEngine.ts` — removed ~350 lines of duplicate code |
+| `ace-step-ui/components/RightSidebar.tsx` | Cover art replaced by live visualizer when the displayed song is playing (fade-in animation). Preset picker and fullscreen button overlaid on canvas. |
+| `ace-step-ui/components/SongList.tsx` | Optional dimmed background visualizer behind track rows (same preset as sidebar, 15% opacity) |
+| `ace-step-ui/components/SettingsModal.tsx` | New "Visualizer" section with toggle for song list background |
+| `ace-step-ui/App.tsx` | Wrapped in `AudioAnalysisProvider`, audio analysis connected on play, fullscreen state managed, visualizer bg setting wired from localStorage to SongList |
+
+### How it works
+
+1. **Audio Analysis:** On first playback, the `AudioAnalysisProvider` creates an `AudioContext` and connects an `AnalyserNode` to the player's `HTMLAudioElement`. This single analyser feeds frequency and time-domain data to all visualizer instances.
+2. **Sidebar Visualizer:** When a song is playing and selected in the right sidebar, the static cover art fades out and a `LiveVisualizer` canvas fades in. The visualizer renders at the canvas's native resolution using `requestAnimationFrame`.
+3. **Preset Picker:** A compact dropdown (Palette icon on the canvas) lets users choose from 10 presets: NCS Circle, Linear Bars, Dual Mirror, Center Wave, Orbital, Hexagon, Oscilloscope, Digital Rain, Shockwave, and Minimal. Selection persists to `localStorage`.
+4. **Random Mode:** A "Random" option in the picker auto-cycles through presets every ~30 seconds, picking a different preset each time.
+5. **Fullscreen Mode:** Click the Maximize icon → the Fullscreen API is activated, a portal renders the visualizer filling the screen. The HUD (song title, artist, progress bar, play/pause/skip controls) auto-hides after 3 seconds of mouse inactivity and reappears on movement. Keyboard shortcuts: Space (play/pause), Escape (exit), arrows (skip).
+6. **Song List Background:** Toggleable in Settings → Visualizer → "Song list background". When enabled and music is playing, a dimmed (15% opacity) version of the same preset renders behind the track rows as an ambient visual.
+7. **Shared Engine:** `visualizerEngine.ts` is imported by both `LiveVisualizer` (real-time) and `VideoGeneratorModal` (offline MP4 export), eliminating code duplication.
+
+### Presets
+
+| Preset | Style |
+|--------|-------|
+| NCS Circle | Radial frequency bars rotating around center point |
+| Linear Bars | Classic horizontal spectrum analyzer |
+| Dual Mirror | Mirrored horizontal bars from center |
+| Center Wave | Concentric elliptical waves |
+| Orbital | Animated arcs orbiting center |
+| Hexagon | Pulsing hexagonal wireframe |
+| Oscilloscope | Real-time waveform display |
+| Digital Rain | Matrix-style falling characters |
+| Shockwave | Expanding concentric ring pulses |
+| Minimal | Clean particles-only |
+
+---
+
 <!-- 
 ## [Next Feature Name]
 
