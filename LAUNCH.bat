@@ -120,8 +120,11 @@ echo.
 REM ---- Step 2b: Rebuild server TypeScript ----
 echo [2b/4] Building server...
 cd ace-step-ui\server
-call npx tsc 2>nul
-cd ..\..
+call npx tsc
+if errorlevel 1 (
+    echo   [!] TypeScript build had errors — server will use source via tsx.
+)
+cd ..\..\
 echo   Done.
 echo.
 
