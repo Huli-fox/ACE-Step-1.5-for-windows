@@ -779,7 +779,18 @@ def generate_music(
                             seed=42,
                         )
                         if lrc_result.get("success"):
-                            audio_dict["lrc_text"] = lrc_result.get("lrc_text", "")
+                            lrc_text = lrc_result.get("lrc_text", "")
+                            audio_dict["lrc_text"] = lrc_text
+                            # Save .lrc file alongside audio
+                            audio_path = audio_dict.get("path")
+                            if audio_path and lrc_text:
+                                lrc_path = os.path.splitext(audio_path)[0] + ".lrc"
+                                try:
+                                    with open(lrc_path, "w", encoding="utf-8") as f:
+                                        f.write(lrc_text)
+                                    logger.info(f"[generate_music] LRC saved: {lrc_path}")
+                                except Exception as e:
+                                    logger.warning(f"[generate_music] Failed to save LRC file: {e}")
                             logger.info(f"[generate_music] LRC generated for sample {idx}")
                         else:
                             logger.warning(f"[generate_music] LRC failed for sample {idx}: {lrc_result.get('error')}")
