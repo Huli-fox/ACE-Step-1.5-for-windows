@@ -54,7 +54,7 @@ $uv_args = [System.Collections.ArrayList]::new()
 uv pip install hatchling editables 2>$null
 
 # run train
-uv run $uv_args acestep-api $ext_args
+python $uv_args acestep/api_server.py $ext_args
 
 Write-Output "Start finished"
 Read-Host | Out-Null ;
