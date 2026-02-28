@@ -401,6 +401,7 @@ PARAM_ALIASES = {
     "allow_lm_batch": ["allow_lm_batch", "allowLmBatch", "parallel_thinking"],
     "track_name": ["track_name", "trackName"],
     "track_classes": ["track_classes", "trackClasses", "instruments"],
+    "get_lrc": ["get_lrc", "getLrc"],
 }
 
 
@@ -636,6 +637,8 @@ class GenerateMusicRequest(BaseModel):
     lm_top_p: Optional[float] = 0.9
     lm_repetition_penalty: float = 1.0
     lm_negative_prompt: str = "NO USER INPUT"
+
+    get_lrc: bool = False
 
     steering_enabled: bool = False
     steering_loaded: List[str] = Field(default_factory=list)
@@ -2259,6 +2262,7 @@ def create_app() -> FastAPI:
                     use_cot_caption=use_cot_caption,  # Use local var (may be auto-disabled)
                     use_cot_language=use_cot_language,  # Use local var (may be auto-disabled)
                     use_constrained_decoding=True,
+                    get_lrc=req.get_lrc,
                     steering_enabled=req.steering_enabled,
                     steering_loaded=req.steering_loaded,
                     steering_alphas=req.steering_alphas,
@@ -2539,6 +2543,7 @@ def create_app() -> FastAPI:
                     "timesignature": _none_if_na_str(metas_out.get("timesignature")),
                     "lm_model": lm_model_name,
                     "dit_model": dit_model_name,
+                    "lrc": [audio.get("lrc_text", "") for audio in result.audios] if req.get_lrc else None,
                 }
 
             t0 = time.time()
