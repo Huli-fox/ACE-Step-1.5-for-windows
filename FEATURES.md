@@ -524,6 +524,61 @@ Real-time audio-reactive visualizations powered by the Web Audio API. Repurposes
 
 ---
 
+## Synced Lyrics & Song Structure
+
+**Branch:** `qinglong`  
+**Status:** ✅ Merged
+
+Real-time synced lyrics display and song structure visualization. LRC lyrics files are automatically downloaded alongside generated audio, displayed as an overlay on the visualizer and a collapsible bar in the song list. Section markers from the LRC file (Verse, Chorus, Bridge, etc.) are shown as positioned labels above the player waveform.
+
+### What's included
+
+| File | Description |
+|------|-------------|
+| `ace-step-ui/server/src/routes/generate.ts` | Downloads `.lrc` file alongside audio during generation, saving it with matching UUID |
+| `ace-step-ui/components/LyricsOverlay.tsx` | Synced lyrics overlay on the art box visualizer — fetches LRC directly, parses with `\r\n` handling, filters section markers |
+| `ace-step-ui/components/LyricsBar.tsx` | **[NEW]** Collapsible bar at the bottom of the song list showing one lyric line at a time with smooth fade-up + blur animation |
+| `ace-step-ui/components/SectionMarkers.tsx` | **[NEW]** Thin row above the player waveform with section labels (Verse, Chorus, Bridge, etc.) positioned proportionally by timestamp |
+| `ace-step-ui/components/SongList.tsx` | Integrated LyricsBar, conditionally hidden during A/B comparison mode |
+| `ace-step-ui/components/Player.tsx` | Integrated SectionMarkers above the waveform progress bar |
+| `ace-step-ui/App.tsx` | Passes `currentTime` prop through to SongList for lyrics synchronization |
+
+### How it works
+
+1. **LRC Download:** When a song is generated, the Node.js server downloads the `.lrc` file from the Python API alongside the audio file, saving it as `/audio/{userId}/{songId}.lrc`.
+2. **Lyrics Overlay:** The `LyricsOverlay` component fetches the `.lrc` file by swapping the audio file extension, parses timestamps, and displays lines synced to playback. Section markers (e.g., `[Verse 1]`) are filtered from display but preserved in parsed data.
+3. **Lyrics Bar:** A collapsible bar at the bottom of the song list shows the current lyric line in large white text with a smooth fade-up + blur-to-sharp animation on each line change. Expanded by default, hidden during A/B comparison mode.
+4. **Section Markers:** Section markers from the LRC file are parsed and displayed in a thin row above the player waveform. Labels like `[Chorus - Exciting]` are cleaned to just `Chorus`. Each marker is positioned at its proportional timestamp with a vertical tick at the section boundary.
+5. **Windows Compatibility:** The LRC parser strips `\r` characters before splitting lines, handling Windows-style `\r\n` line endings that otherwise break the timestamp regex.
+
+---
+
+## Visualizer Preset Selection
+
+**Branch:** `qinglong`  
+**Status:** ✅ Merged
+
+Configurable pool of visualizer presets for random rotation. Users choose which presets are included via checkboxes in Settings. Multiple visualizer instances (art box, song list background, fullscreen) coordinate to never show the same preset simultaneously.
+
+### What's included
+
+| File | Description |
+|------|-------------|
+| `ace-step-ui/components/SettingsModal.tsx` | Checkbox grid in the Visualizer section for toggling presets, Select All/Clear buttons, stored in `localStorage` |
+| `ace-step-ui/components/LiveVisualizer.tsx` | Reads enabled presets from `localStorage`, instance coordination via global registry, `instanceId` prop |
+| `ace-step-ui/components/SongList.tsx` | `instanceId="songlist"` on background visualizer |
+| `ace-step-ui/components/RightSidebar.tsx` | `instanceId="artbox"` on art box visualizer |
+| `ace-step-ui/components/FullscreenVisualizer.tsx` | `instanceId="fullscreen"` on fullscreen visualizer |
+
+### How it works
+
+1. **Settings UI:** Open Settings → Visualizer → a 2-column checkbox grid shows all 10 presets with emoji labels. Toggle each on/off. Must keep at least 1 enabled.
+2. **Enabled Pool:** The enabled preset list is stored in `localStorage` as `visualizer_enabled_presets`. Changes are broadcast via `StorageEvent` so all instances update immediately.
+3. **Instance Coordination:** Each `LiveVisualizer` instance registers its current preset in a global `activePresets` map keyed by `instanceId`. When cycling in Random mode, each instance excludes presets currently shown by other instances.
+4. **Defaults:** NCS Circle, Linear Bars, Dual Mirror, and Oscilloscope are enabled by default.
+
+---
+
 ## A/B Track Comparison
 
 **Branch:** `qinglong`  
