@@ -84,6 +84,11 @@ class InitServiceLoaderMixin:
             self.model = self.model.to("cpu").to(self.dtype)
         self.model.eval()
 
+        # Replace checkpoint's vanilla generate_audio with our patched version
+        # (solver/guidance registry, PAG support, etc.) — no disk files modified.
+        from acestep.core.generation.monkeypatch_generate_audio import apply_generate_audio_monkeypatch
+        apply_generate_audio_monkeypatch(self.model)
+
         if compile_model:
             self._ensure_len_for_compile(self.model, "model")
             self.model = torch.compile(self.model)
