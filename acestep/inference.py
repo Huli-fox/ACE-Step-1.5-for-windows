@@ -753,6 +753,7 @@ def generate_music(
             audios.append(audio_dict)
 
         # Phase 3: LRC timestamp generation (optional, inline)
+        logger.info(f"[generate_music] LRC: get_lrc={params.get_lrc}, instrumental={params.instrumental}, has_lyrics={bool(params.lyrics and params.lyrics.strip())}")
         if params.get_lrc and not params.instrumental and params.lyrics and params.lyrics.strip():
             pred_latents = dit_extra_outputs.get("pred_latents")
             enc_hidden = dit_extra_outputs.get("encoder_hidden_states")

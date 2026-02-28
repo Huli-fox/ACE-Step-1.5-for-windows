@@ -3016,6 +3016,7 @@ def create_app() -> FastAPI:
                 allow_lm_batch=p.bool("allow_lm_batch", True),
                 track_name=p.str("track_name"),
                 track_classes=t_classes,
+                get_lrc=p.bool("get_lrc"),
                 steering_enabled=p.bool("steering_enabled"),
                 steering_loaded=p.get("steering_loaded") or [],
                 steering_alphas=p.get("steering_alphas") or {},
