@@ -58,6 +58,12 @@ Professional-grade audio stem separation powered by BS-RoFormer (SDR 12.97) and 
 ### ✨ Audio Enhancement Studio
 Post-processing engine ported from [ComfyUI-Audio_Quality_Enhancer](https://github.com/ShmuelRonen/ComfyUI-Audio_Quality_Enhancer). Apply multi-band EQ (clarity, warmth, air/brilliance, dynamics), reverb (synthetic IR convolution), echo, and stereo widening (mid/side + Haas effect) to any track. **Two modes:** Simple (full-mix DSP via [pedalboard](https://github.com/spotify/pedalboard)/scipy) and Stem Separation (Demucs splits → per-stem targeted enhancement → remix). Comes with **6 built-in presets** (Radio Ready, Warm & Rich, Bright & Clear, Club Master, Lo-Fi Chill, Cinematic) and full manual control. Accessible from any song's dropdown menu → "Enhance Audio".
 
+### 🔀 A/B Track Comparison
+Side-by-side comparison of any two generated tracks. Right-click to assign Track A and Track B, then click **Play Comparison** to start synchronized dual-audio playback. Toggle between tracks instantly while maintaining position — the inactive track plays muted in the background. Fully pause-aware: pausing the player pauses both audio elements, and toggling A/B while paused stays paused. Includes a **Diff** button to compare all generation parameters side-by-side.
+
+### 📂 Native Folder Picker
+The **Browse** buttons on both basic and advanced adapter panels now open a native Windows folder picker dialog, allowing you to select any folder on disk. The selected path is written directly into the adapter folder input.
+
 ---
 
 ## Upstream Features

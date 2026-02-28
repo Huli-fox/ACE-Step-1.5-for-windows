@@ -524,6 +524,40 @@ Real-time audio-reactive visualizations powered by the Web Audio API. Repurposes
 
 ---
 
+## A/B Track Comparison
+
+**Branch:** `qinglong`  
+**Status:** ✅ Merged
+
+Side-by-side A/B comparison of any two tracks in the song list. Both audio elements play simultaneously (one muted, one audible) with instant switching, synchronized positions, and full pause/resume control.
+
+### What's included
+
+| File | Description |
+|------|-------------|
+| `ace-step-ui/App.tsx` | `abTrackA/B`, `abActive`, `abAudioRef` state, `handleABPlay` (starts comparison), `handleABToggle` (swaps mute/unmute with pause-state respect), `handleABClear`, dual-audio `isPlaying` sync effect |
+| `ace-step-ui/components/SongList.tsx` | A/B selection badges on song items, comparison bar as a flex footer at the bottom of the song list (outside the scroll container), `Play Comparison` / `A/B Toggle` / `Diff` / `Clear` controls |
+| `ace-step-ui/components/SongDropdownMenu.tsx` | "Set as Track A" / "Set as Track B" options in the per-song context menu |
+| `ace-step-ui/components/accordions/AdaptersAccordion.tsx` | Native folder picker for Browse buttons via `browseLoraFolder` API |
+| `ace-step-ui/services/api.ts` | `browseLoraFolder()` API client method |
+| `ace-step-ui/server/src/routes/lora.ts` | `GET /browse-folder` — opens native Windows folder picker dialog via PowerShell `FolderBrowserDialog` |
+
+### How it works
+
+1. Right-click any song → "Set as Track A". Right-click another → "Set as Track B". Both appear as `A` / `B` badges on the song items.
+2. A comparison bar appears at the bottom of the song list with track labels, Play Comparison, Diff, and Clear buttons.
+3. **Play Comparison** creates a secondary `HTMLAudioElement` for Track B, syncs position to Track A, and starts both. A is audible, B is muted.
+4. **A/B Toggle** switches which track is audible by swapping mute states and syncing `currentTime`. Position stays perfectly aligned.
+5. **Pause-state awareness** — if the user pauses during comparison (via the player bar), toggling A/B does NOT auto-resume. Both audio elements respect `isPlaying` state.
+6. **Diff** opens a parameter comparison modal showing all generation settings side-by-side.
+7. **Clear** removes the comparison selection and cleans up the secondary audio element.
+
+### Native Folder Picker
+
+The **Browse** button on both basic and advanced adapter panels now opens a native Windows folder picker dialog (PowerShell `FolderBrowserDialog`) instead of scanning an existing folder path. The selected folder path is written directly into the adapter folder input field.
+
+---
+
 <!-- 
 ## [Next Feature Name]
 
