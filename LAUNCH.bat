@@ -120,8 +120,11 @@ echo.
 REM ---- Step 2b: Rebuild server TypeScript ----
 echo [2b/4] Building server...
 cd ace-step-ui\server
-call npx tsc 2>nul
-cd ..\..
+call npx tsc
+if errorlevel 1 (
+    echo   [!] TypeScript build had errors — server will use source via tsx.
+)
+cd ..\..\
 echo   Done.
 echo.
 
@@ -133,9 +136,12 @@ for /d /r "acestep" %%d in (__pycache__) do (
 echo   Done.
 echo.
 
-REM ---- Step 2d: Patch checkpoints for solver/guidance support ----
-echo [2d/4] Patching checkpoints for solver/guidance support...
-.venv\Scripts\python.exe patch_checkpoints.py
+REM ---- Step 2d: Apply Triton DLL patch (Windows PyTorch 2.9.x fix) ----
+REM  PyTorch 2.9.x has a bug where CUDA stream handles overflow on Windows,
+REM  causing vllm to fall back to slow PyTorch eager mode (~14x slower).
+REM  This patch is idempotent and safe to run on every startup.
+echo [2d/4] Checking Triton compatibility patch...
+.venv\Scripts\python.exe scripts\patch_torch_triton.py --quiet
 echo   Done.
 echo.
 

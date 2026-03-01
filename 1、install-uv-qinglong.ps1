@@ -212,7 +212,7 @@ else {
     if (-not $skip_dit) {
         foreach ($model in $dit_models) {
             Write-Output "`n正在下载 DiT 模型: $model / Downloading DiT model: $model"
-            uv run acestep-download --model $model
+            ~/.local/bin/uv run acestep-download --model $model
         }
     }
 
@@ -220,23 +220,34 @@ else {
     if (-not $skip_lm) {
         foreach ($model in $lm_models) {
             Write-Output "`n正在下载 LM 模型: $model / Downloading LM model: $model"
-            uv run acestep-download --model $model
+            ~/.local/bin/uv run acestep-download --model $model
         }
     }
-  
+
     Write-Output "`n模型下载完成 / Model download completed"
 }
 
 Set-Location ace-step-ui
 
-# Run setup script (installs all dependencies)
-# 运行安装脚本（安装所有依赖）
-if (Test-Path "setup.sh") {
-    Write-Output "Running setup.sh..."
-    & .\setup.sh
+# Run setup script (OS-aware)
+# 运行安装脚本（根据操作系统选择）
+if ($IsLinux -or $IsMacOS) {
+    if (Test-Path "setup.sh") {
+        Write-Output "Running setup.sh..."
+        & bash ./setup.sh
+    }
+    else {
+        Write-Warning "setup.sh not found"
+    }
 }
 else {
-    Write-Warning "Setup script not found"
+    if (Test-Path "setup.bat") {
+        Write-Output "Running setup.bat..."
+        & .\setup.bat
+    }
+    else {
+        Write-Warning "setup.bat not found"
+    }
 }
 
 Write-Output "Install finished"

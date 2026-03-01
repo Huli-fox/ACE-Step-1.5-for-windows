@@ -58,6 +58,18 @@ Professional-grade audio stem separation powered by BS-RoFormer (SDR 12.97) and 
 ### ✨ Audio Enhancement Studio
 Post-processing engine ported from [ComfyUI-Audio_Quality_Enhancer](https://github.com/ShmuelRonen/ComfyUI-Audio_Quality_Enhancer). Apply multi-band EQ (clarity, warmth, air/brilliance, dynamics), reverb (synthetic IR convolution), echo, and stereo widening (mid/side + Haas effect) to any track. **Two modes:** Simple (full-mix DSP via [pedalboard](https://github.com/spotify/pedalboard)/scipy) and Stem Separation (Demucs splits → per-stem targeted enhancement → remix). Comes with **6 built-in presets** (Radio Ready, Warm & Rich, Bright & Clear, Club Master, Lo-Fi Chill, Cinematic) and full manual control. Accessible from any song's dropdown menu → "Enhance Audio".
 
+### 🔀 A/B Track Comparison
+Side-by-side comparison of any two generated tracks. Right-click to assign Track A and Track B, then click **Play Comparison** to start synchronized dual-audio playback. Toggle between tracks instantly while maintaining position — the inactive track plays muted in the background. Fully pause-aware: pausing the player pauses both audio elements, and toggling A/B while paused stays paused. Includes a **Diff** button to compare all generation parameters side-by-side.
+
+### 🎤 Synced Lyrics & Song Structure
+Real-time **LRC lyrics overlay** on the art box visualizer synced to playback. A collapsible **Lyrics Bar** at the bottom of the song list shows one lyric line at a time with smooth fade-up transitions — expanded by default, hidden during A/B comparison. **Section markers** (Verse, Chorus, Bridge, Outro, etc.) from the LRC file are displayed in a thin row above the player waveform, positioned at their timestamps.
+
+### 🎨 Visualizer Preset Selection
+Choose which visualizer presets are included in random rotation via a checkbox grid in **Settings → Visualizer**. Multiple visualizer instances (art box, song list background, fullscreen) coordinate to never show the same preset simultaneously. Default pool: NCS Circle, Spectrum, Mirror, Analog.
+
+### 📂 Native Folder Picker
+The **Browse** buttons on both basic and advanced adapter panels now open a native Windows folder picker dialog, allowing you to select any folder on disk. The selected path is written directly into the adapter folder input.
+
 ---
 
 ## Upstream Features

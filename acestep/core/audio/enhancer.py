@@ -86,7 +86,7 @@ PRESETS = {
     "radio_ready": {
         "label": "Radio Ready",
         "clarity": 0.6, "warmth": 0.3, "air": 0.5, "dynamics": 0.6,
-        "reverb_amount": 0.1, "reverb_room_size": 0.4, "reverb_damping": 0.5,
+        "reverb_amount": 0.0, "reverb_room_size": 0.4, "reverb_damping": 0.5,
         "echo_delay": 0.0, "echo_decay": 0.0,
         "stereo_width": 0.2,
         "vocals_enhance": 0.6, "drums_enhance": 0.5, "bass_enhance": 0.4, "other_enhance": 0.4,
@@ -488,6 +488,9 @@ class AudioEnhancer:
     def __init__(self):
         self._demucs_model = None
         self._demucs_model_name = None
+        # Stem cache: { audio_path_hash: { "stems": Dict[str, np.ndarray], "sample_rate": int } }
+        self._stem_cache: Dict[str, Dict[str, Any]] = {}
+        self._stem_cache_max = 3  # Keep at most N cached separations
 
     def _load_demucs(self, model_name: str = "htdemucs", device: str = "cuda"):
         """Load Demucs model on demand.
@@ -520,6 +523,11 @@ class AudioEnhancer:
         except Exception as e:
             logger.error(f"Failed to load Demucs: {e}")
             return None
+
+    def clear_stem_cache(self):
+        """Clear cached stem separations."""
+        self._stem_cache.clear()
+        logger.info("Stem cache cleared")
 
     def get_available_info(self) -> Dict[str, Any]:
         """Get availability info for dependencies."""
@@ -635,6 +643,8 @@ class AudioEnhancer:
           - audio_separator: separates to temp WAV files, reads them back
           - standalone demucs: uses tensors directly
         """
+        import hashlib
+
         def report(pct, msg):
             if progress_callback:
                 progress_callback(pct, msg)
@@ -643,21 +653,38 @@ class AudioEnhancer:
         device = params.get("device", "cuda")
         model_name = params.get("demucs_model", "htdemucs")
 
+        # Stem cache: key by audio content hash so same file reuses stems
+        cache_key = hashlib.md5(audio.tobytes()[:1_000_000]).hexdigest()  # hash first ~1MB for speed
+
         try:
-            model = self._load_demucs(model_name, device)
-            if model is None:
-                raise RuntimeError("Failed to load Demucs model")
-
-            report(0.1, f"Running Demucs ({model_name})…")
-
-            if _DEMUCS_BACKEND == "audio_separator":
-                stems = self._separate_with_audio_separator(
-                    audio, sample_rate, model, report
-                )
+            # Check cache first
+            if cache_key in self._stem_cache:
+                logger.info(f"Using cached stems for key {cache_key[:8]}…")
+                report(0.35, "Using cached stems (skipping separation)…")
+                stems = self._stem_cache[cache_key]["stems"]
             else:
-                stems = self._separate_with_standalone_demucs(
-                    audio, sample_rate, model, device, report
-                )
+                model = self._load_demucs(model_name, device)
+                if model is None:
+                    raise RuntimeError("Failed to load Demucs model")
+
+                report(0.1, f"Running Demucs ({model_name})…")
+
+                if _DEMUCS_BACKEND == "audio_separator":
+                    stems = self._separate_with_audio_separator(
+                        audio, sample_rate, model, report
+                    )
+                else:
+                    stems = self._separate_with_standalone_demucs(
+                        audio, sample_rate, model, device, report
+                    )
+
+                # Store in cache (evict oldest if full)
+                if len(self._stem_cache) >= self._stem_cache_max:
+                    oldest_key = next(iter(self._stem_cache))
+                    del self._stem_cache[oldest_key]
+                    logger.info(f"Evicted stem cache entry {oldest_key[:8]}…")
+                self._stem_cache[cache_key] = {"stems": stems, "sample_rate": sample_rate}
+                logger.info(f"Cached stems for key {cache_key[:8]}…")
 
             logger.info(f"Stem separation returned {len(stems)} stems: {list(stems.keys())}")
             for sname, sdata in stems.items():

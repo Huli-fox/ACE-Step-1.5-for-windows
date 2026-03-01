@@ -169,6 +169,9 @@ class GenerationParams:
     cot_caption: str = ""
     cot_lyrics: str = ""
 
+    # LRC (synced lyrics) generation
+    get_lrc: bool = False
+
     # Steering Parameters
     steering_enabled: bool = False
     steering_loaded: List[str] = field(default_factory=list)
@@ -748,6 +751,53 @@ def generate_music(
             }
 
             audios.append(audio_dict)
+
+        # Phase 3: LRC timestamp generation (optional, inline)
+        logger.info(f"[generate_music] LRC: get_lrc={params.get_lrc}, instrumental={params.instrumental}, has_lyrics={bool(params.lyrics and params.lyrics.strip())}")
+        if params.get_lrc and not params.instrumental and params.lyrics and params.lyrics.strip():
+            pred_latents = dit_extra_outputs.get("pred_latents")
+            enc_hidden = dit_extra_outputs.get("encoder_hidden_states")
+            enc_mask = dit_extra_outputs.get("encoder_attention_mask")
+            ctx_latents = dit_extra_outputs.get("context_latents")
+            lyric_ids = dit_extra_outputs.get("lyric_token_idss")
+
+            if all(x is not None for x in [pred_latents, enc_hidden, enc_mask, ctx_latents, lyric_ids]):
+                for idx, audio_dict in enumerate(audios):
+                    if idx >= pred_latents.shape[0]:
+                        break
+                    try:
+                        lrc_duration = audio_duration if (audio_duration and audio_duration > 0) else pred_latents.shape[1] / 25.0
+                        lrc_result = dit_handler.get_lyric_timestamp(
+                            pred_latent=pred_latents[idx:idx + 1],
+                            encoder_hidden_states=enc_hidden[idx:idx + 1],
+                            encoder_attention_mask=enc_mask[idx:idx + 1],
+                            context_latents=ctx_latents[idx:idx + 1],
+                            lyric_token_ids=lyric_ids[idx:idx + 1],
+                            total_duration_seconds=float(lrc_duration),
+                            vocal_language=dit_input_vocal_language or "en",
+                            inference_steps=int(params.inference_steps),
+                            seed=42,
+                        )
+                        if lrc_result.get("success"):
+                            lrc_text = lrc_result.get("lrc_text", "")
+                            audio_dict["lrc_text"] = lrc_text
+                            # Save .lrc file alongside audio
+                            audio_path = audio_dict.get("path")
+                            if audio_path and lrc_text:
+                                lrc_path = os.path.splitext(audio_path)[0] + ".lrc"
+                                try:
+                                    with open(lrc_path, "w", encoding="utf-8") as f:
+                                        f.write(lrc_text)
+                                    logger.info(f"[generate_music] LRC saved: {lrc_path}")
+                                except Exception as e:
+                                    logger.warning(f"[generate_music] Failed to save LRC file: {e}")
+                            logger.info(f"[generate_music] LRC generated for sample {idx}")
+                        else:
+                            logger.warning(f"[generate_music] LRC failed for sample {idx}: {lrc_result.get('error')}")
+                    except Exception as e:
+                        logger.warning(f"[generate_music] LRC generation error for sample {idx}: {e}")
+            else:
+                logger.warning("[generate_music] LRC requested but extra_outputs missing required tensors")
 
         # Merge extra_outputs: include dit_extra_outputs (latents, masks) and add LM metadata
         extra_outputs = dit_extra_outputs.copy()
